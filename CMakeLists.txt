@@ -3,4 +3,4 @@ project(ParallelComputing_ParticleSimulation)
 
 set(CMAKE_CXX_STANDARD 14)
 
-add_executable(ParallelComputing_ParticleSimulation main.cpp)
+add_executable(ParallelComputing_ParticleSimulation main.cpp common.h serial.cpp)
