@@ -56,3 +56,4 @@ test/test_runner
 
 
 venv
+cmake-build-wsl_profile/*

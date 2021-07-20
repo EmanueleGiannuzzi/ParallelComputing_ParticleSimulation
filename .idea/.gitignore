@@ -8,3 +8,8 @@
 /httpRequests/
 
 *.iml
+
+deployment.xml
+misc.xml
+modules.xml
+vcs.xml
