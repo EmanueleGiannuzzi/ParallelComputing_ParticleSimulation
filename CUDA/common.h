@@ -1,5 +1,5 @@
-#ifndef __CS267_COMMON_H__
-#define __CS267_COMMON_H__
+#ifndef CUDA_COMMON_H
+#define CUDA_COMMON_H
 
 // Program Constants
 #define nsteps   1000
@@ -24,4 +24,4 @@ typedef struct particle_t {
 void init_simulation(particle_t* parts, int num_parts, double size);
 void simulate_one_step(particle_t* parts, int num_parts, double size);
 
-#endif
+#endif //CUDA_COMMON_H
