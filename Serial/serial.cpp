@@ -1,5 +1,6 @@
 #include "common.h"
 #include <cmath>
+#include <vector>
 
 // Apply the force from neighbor to particle
 void apply_force(particle_t& particle, particle_t& neighbor) {
@@ -42,21 +43,118 @@ void move(particle_t& p, double size) {
     }
 }
 
+typedef std::vector<particle_t*> bin_t;
 
-void init_simulation(particle_t* parts, int num_parts, double size) {
+double size;
+bin_t* bins;
+int bin_row_count;
+int bin_count;
+double bin_size;
+
+/*
+       0   1
+     +---X---->
+   + +---+---+
+0  | | 0 | 1 |
+   Y +-------+
+1  | | 2 | 3 |
+   | +---+---+
+   v
+*/
+
+int inline get_bin_id(particle_t& particle) {
+    int x, y;
+    y = particle.y / bin_size;
+    x = particle.x / bin_size;
+    if (x == bin_row_count) {
+        x--;
+    }
+    if (y == bin_row_count) {
+        y--;
+    }
+    return y * bin_row_count + x;
+}
+
+void rebin(particle_t* parts, int num_parts) {
+    for (int i = 0; i < bin_count; i++) {
+        bins[i].clear();
+    }
+    for (int i = 0; i < num_parts; i++) {
+        int bin_id = get_bin_id(parts[i]);
+        bins[bin_id].push_back(&parts[i]);
+    }
+}
+
+
+void init_simulation(particle_t* parts, int num_parts, double size_) {
     // You can use this space to initialize static, global data objects
     // that you may need. This function will be called once before the
     // algorithm begins. Do not do any particle simulation here
+    size = size_;
+    bin_row_count = size / cutoff;
+    bin_count = bin_row_count * bin_row_count;
+    bin_size = size / bin_row_count;
+    bins = new bin_t[bin_row_count * bin_row_count];
+    rebin(parts, num_parts);
+}
 
-    
+void inline loop(particle_t* parts, int i, int another_bin_id) {
+    for (particle_t* neighbor : bins[another_bin_id]) {
+        apply_force(parts[i], *neighbor);
+    }
+}
+
+bool inline has_up(int bin_id) {
+    return bin_id - bin_row_count > -1;
+}
+bool inline has_down(int bin_id) {
+    return bin_id + bin_row_count < bin_count;
+}
+bool inline has_left(int bin_id) {
+    return bin_id % bin_row_count != 0;
+}
+bool inline has_right(int bin_id) {
+    return bin_id % bin_row_count != bin_row_count - 1;
 }
 
 void simulate_one_step(particle_t* parts, int num_parts, double size) {
     // Compute Forces
     for (int i = 0; i < num_parts; ++i) {
         parts[i].ax = parts[i].ay = 0;
-        for (int j = 0; j < num_parts; ++j) {
-            apply_force(parts[i], parts[j]);
+        int bin_id = get_bin_id(parts[i]);
+        // self
+        loop(parts, i, bin_id);
+        // up
+        if (has_up(bin_id)) {
+            loop(parts, i, bin_id - bin_row_count);
+        }
+        // up right
+        if (has_up(bin_id) && has_right(bin_id)) {
+            loop(parts, i, bin_id - bin_row_count + 1);
+        }
+        // right
+        if (has_right(bin_id)) {
+            loop(parts, i, bin_id + 1);
+        }
+        // down right
+        if (has_down(bin_id) && has_right(bin_id)) {
+            loop(parts, i, bin_id + bin_row_count + 1);
+        }
+        // down
+        if (has_down(bin_id)) {
+            loop(parts, i, bin_id + bin_row_count);
+        }
+        // down left
+        if (has_down(bin_id) && has_left(bin_id)) {
+            loop(parts, i, bin_id + bin_row_count - 1);
+        }
+        // left
+        if (has_left(bin_id)) {
+            loop(parts, i, bin_id - 1);
+        }
+        // up left
+        if (has_up(bin_id) && has_left(bin_id)) {
+            loop(parts, i, bin_id - bin_row_count - 1);
         }
     }
 
@@ -64,6 +162,5 @@ void simulate_one_step(particle_t* parts, int num_parts, double size) {
     for (int i = 0; i < num_parts; ++i) {
         move(parts[i], size);
     }
+    rebin(parts, num_parts);
 }
-
-

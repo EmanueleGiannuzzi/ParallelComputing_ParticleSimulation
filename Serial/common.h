@@ -1,5 +1,5 @@
-#ifndef PARALLELCOMPUTING_PARTICLESIMULATION_COMMON_H
-#define PARALLELCOMPUTING_PARTICLESIMULATION_COMMON_H
+#ifndef SERIAL_COMMON_H
+#define SERIAL_COMMON_H
 
 // Program Constants
 #define nsteps   1000
@@ -24,4 +24,4 @@ typedef struct particle_t {
 void init_simulation(particle_t* parts, int num_parts, double size);
 void simulate_one_step(particle_t* parts, int num_parts, double size);
 
-#endif //PARALLELCOMPUTING_PARTICLESIMULATION_COMMON_H
+#endif //SERIAL_COMMON_H

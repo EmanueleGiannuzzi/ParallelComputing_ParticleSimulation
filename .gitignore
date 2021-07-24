@@ -55,5 +55,5 @@ bin/*
 test/test_runner
 
 
-venv
+venv/*
 cmake-build-wsl_profile/*

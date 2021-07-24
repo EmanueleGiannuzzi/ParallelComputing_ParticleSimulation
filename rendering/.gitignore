@@ -1,1 +1,4 @@
-particles.gif
+openmp_particles.gif
+mpi_particles.gif
+serial_particles.gif
+naive_particles.gif

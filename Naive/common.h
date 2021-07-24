@@ -1,5 +1,5 @@
-#ifndef OPENMP_COMMON_H
-#define OPENMP_COMMON_H
+#ifndef NAIVE_COMMON_H
+#define NAIVE_COMMON_H
 
 // Program Constants
 #define nsteps   1000
@@ -24,4 +24,4 @@ typedef struct particle_t {
 void init_simulation(particle_t* parts, int num_parts, double size);
 void simulate_one_step(particle_t* parts, int num_parts, double size);
 
-#endif //OPENMP_COMMON_H
+#endif //NAIVE_COMMON_H

@@ -1,5 +1,5 @@
-#ifndef __CS267_COMMON_H__
-#define __CS267_COMMON_H__
+#ifndef MPI_COMMON_H
+#define MPI_COMMON_H
 
 #include <cstdint>
 #include <mpi.h>
@@ -31,4 +31,4 @@ void init_simulation(particle_t* parts, int num_parts, double size, int rank, in
 void simulate_one_step(particle_t* parts, int num_parts, double size, int rank, int num_procs);
 void gather_for_save(particle_t* parts, int num_parts, double size, int rank, int num_procs);
 
-#endif
+#endif //MPI_COMMON_H
