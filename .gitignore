@@ -57,3 +57,4 @@ test/test_runner
 
 venv
 cmake-build-wsl_profile/*
+Naive/Naive_out/Naive

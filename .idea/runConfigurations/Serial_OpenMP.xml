@@ -1,7 +1,0 @@
-<component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="Serial-OpenMP" type="CMakeRunConfiguration" factoryName="Application" PROGRAM_PARAMS="-n 1000 -s 150 -o serial-openmp.parts.out" REDIRECT_INPUT="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="ParallelComputing_ParticleSimulation" TARGET_NAME="Serial" CONFIG_NAME="Debug" RUN_TARGET_PROJECT_NAME="ParallelComputing_ParticleSimulation" RUN_TARGET_NAME="Serial">
-    <method v="2">
-      <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
-    </method>
-  </configuration>
-</component>

@@ -1,4 +1,5 @@
-# cmake_minimum_required(VERSION <specify CMake version here>)
+cmake_minimum_required(VERSION 3.19)
+
 project(Serial)
 
 set(CMAKE_CXX_STANDARD 14)
