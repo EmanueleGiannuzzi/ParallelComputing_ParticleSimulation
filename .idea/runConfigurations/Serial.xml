@@ -1,5 +1,5 @@
 <component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="Serial" type="CMakeRunConfiguration" factoryName="Application" singleton="false" nameIsGenerated="true" PROGRAM_PARAMS="-n 10000 -s 42 -o serial.parts.out" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" WORKING_DIR="file://$PROJECT_DIR$/Serial/Serial_out" PASS_PARENT_ENVS_2="true" PROJECT_NAME="ParallelComputing_ParticleSimulation" TARGET_NAME="Serial" CONFIG_NAME="Debug" RUN_TARGET_PROJECT_NAME="ParallelComputing_ParticleSimulation" RUN_TARGET_NAME="Serial">
+  <configuration default="false" name="Serial" type="CMakeRunConfiguration" factoryName="Application" singleton="false" nameIsGenerated="true" PROGRAM_PARAMS="-n 5000 -s 42 -o serial.parts.out" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" WORKING_DIR="file://$PROJECT_DIR$/Serial/Serial_out" PASS_PARENT_ENVS_2="true" PROJECT_NAME="ParallelComputing_ParticleSimulation" TARGET_NAME="Serial" CONFIG_NAME="Debug" RUN_TARGET_PROJECT_NAME="ParallelComputing_ParticleSimulation" RUN_TARGET_NAME="Serial">
     <method v="2">
       <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
     </method>
