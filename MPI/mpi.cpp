@@ -6,6 +6,7 @@
 
 using namespace std;
 
+
 struct bin_t {
     int id;
     vector<particle_t*> particles;
@@ -55,6 +56,101 @@ int* focus_ids;
 vector<int>* neighbour_ids;
 
 
+typedef int (*direction_id_func)(int);
+vector<direction_id_func> directions({
+      [](int bin_id) {//0 - TOP
+          return bin_id - bin_row_count;
+      },
+      [](int bin_id) {//1 - BOTTOM
+          return bin_id + bin_row_count;
+      },
+      [](int bin_id) {//2 - LEFT
+          return bin_id - 1;
+      },
+      [](int bin_id) {//3 - RIGHT
+          return bin_id + 1;
+      },
+      [](int bin_id) {//4 - TOPLEFT
+          return bin_id - bin_row_count - 1;
+      },
+      [](int bin_id) {//5 - TOPRIGHT
+          return bin_id - bin_row_count + 1;
+      },
+      [](int bin_id) {//6 - BOTTOMLEFT
+          return bin_id + bin_row_count - 1;
+      },
+      [](int bin_id) {//7 - BOTTOMRIGHT
+          return bin_id + bin_row_count + 1;
+      }
+});
+typedef bool (*direction_check_func)(int);
+vector<direction_check_func> directions_check({
+     [](int bin_id) {//0 - TOP
+         return bin_id - bin_row_count > -1;
+     },
+     [](int bin_id) {//1 - BOTTOM
+         return bin_id + bin_row_count < bin_count;
+     },
+     [](int bin_id) {//2 - LEFT
+         return bin_id % bin_row_count != 0;
+     },
+     [](int bin_id) {//3 - RIGHT
+         return bin_id % bin_row_count != bin_row_count - 1;
+     },
+     [](int bin_id) {//4 - TOPLEFT
+         return (bin_id - bin_row_count > -1) && (bin_id % bin_row_count != 0);//TOP && LEFT
+     },
+     [](int bin_id) {//5 - TOPRIGHT
+         return (bin_id - bin_row_count > -1) && (bin_id % bin_row_count != bin_row_count - 1);//TOP && RIGHT
+     },
+     [](int bin_id) {//6 - BOTTOMLEFT
+         return (bin_id + bin_row_count < bin_count) && (bin_id % bin_row_count != 0);//BOTTOM && LEFT
+     },
+     [](int bin_id) {//7 - BOTTOMRIGHT
+         return (bin_id + bin_row_count < bin_count) && (bin_id % bin_row_count != bin_row_count - 1);//BOTTOM && RIGHT
+     }
+});
+
+void apply_force(particle_t& particle, particle_t& neighbor) {
+    // Calculate Distance
+    double dx = neighbor.x - particle.x;
+    double dy = neighbor.y - particle.y;
+    double r2 = dx * dx + dy * dy;
+
+    // Check if the two particles should interact
+    if (r2 > cutoff * cutoff)
+        return;
+
+    r2 = fmax(r2, min_r * min_r);
+    double r = sqrt(r2);
+
+    // Very simple short-range repulsive force
+    double coef = (1 - cutoff / r) / r2 / mass;
+    particle.ax += coef * dx;
+    particle.ay += coef * dy;
+}
+
+// Integrate the ODE
+void move(particle_t& p, double size) {
+    // Slightly simplified Velocity Verlet integration
+    // Conserves energy better than explicit Euler method
+    p.vx += p.ax * dt;
+    p.vy += p.ay * dt;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+
+    // Bounce from walls
+    while (p.x < 0 || p.x > size) {
+        p.x = p.x < 0 ? -p.x : 2 * size - p.x;
+        p.vx = -p.vx;
+    }
+
+    while (p.y < 0 || p.y > size) {
+        p.y = p.y < 0 ? -p.y : 2 * size - p.y;
+        p.vy = -p.vy;
+    }
+}
+
 struct focus {
     bin_t* focus_bin;
     bin_t** neighbours;
@@ -74,6 +170,23 @@ struct focus {
 
      int id() {
         return focus_bin->id;
+    }
+
+    void apply_forces() {
+        for(int i = 0; i < neighbours_size; ++i) {
+            bin_t* neighbour_bin = neighbours[i];
+            for(particle_t* focus_particle : focus_bin->particles){
+                for(particle_t* neighbour_particle : neighbour_bin->particles){
+                    apply_force(*focus_particle, *neighbour_particle);
+                }
+            }
+        }
+    }
+
+    void move_particles(double size) {
+        for(particle_t* focus_particle : focus_bin->particles){
+            move(*focus_particle, size);
+        }
     }
 };
 
@@ -120,69 +233,36 @@ int* get_focus_ids(int rank) {
     return local_b_ids;
 }
 
-bool inline has_up_bin(int bin_id) {
-    return bin_id - bin_row_count > -1;
-}
-bool inline has_down_bin(int bin_id) {
-    return bin_id + bin_row_count < bin_count;
-}
-bool inline has_left_bin(int bin_id) {
-    return bin_id % bin_row_count != 0;
-}
-bool inline has_right_bin(int bin_id) {
-    return bin_id % bin_row_count != bin_row_count - 1;
-}
-bool inline has_topleft_bin(int bin_id) {
-    return has_up_bin(bin_id) && has_left_bin(bin_id);
-}
-bool inline has_topright_bin(int bin_id) {
-    return has_up_bin(bin_id) && has_right_bin(bin_id);
-}
-bool inline has_bottomleft_bin(int bin_id) {
-    return has_down_bin(bin_id) && has_left_bin(bin_id);
-}
-bool inline has_bottomright_bin(int bin_id) {
-    return has_down_bin(bin_id) && has_right_bin(bin_id);
-}
-
 vector<int>& get_bin_neightbors_id(int focus_bin_id) {
     vector<int>* neighbours = new vector<int>();
-    if(has_topleft_bin(focus_bin_id)) {
-        neighbours->push_back(focus_bin_id - bin_row_count - 1);
+    for(int i = 0; i<directions.size(); ++i) {
+        if(directions_check[i](focus_bin_id)){
+            neighbours->push_back(directions[i](focus_bin_id));
+        }
     }
-    if(has_up_bin(focus_bin_id)) {
-        neighbours->push_back(focus_bin_id - bin_row_count);
-    }
-    if(has_topright_bin(focus_bin_id)) {
-        neighbours->push_back(focus_bin_id - bin_row_count + 1);
-    }
-    if(has_left_bin(focus_bin_id)) {
-        neighbours->push_back(focus_bin_id - 1);
-    }
-    if(has_right_bin(focus_bin_id)) {
-        neighbours->push_back(focus_bin_id + 1);
-    }
-    if(has_bottomleft_bin(focus_bin_id)) {
-        neighbours->push_back(focus_bin_id + bin_row_count - 1);
-    }
-    if(has_down_bin(focus_bin_id)) {
-        neighbours->push_back(focus_bin_id + bin_row_count);
-    }
-    if(has_bottomright_bin(focus_bin_id)) {
-        neighbours->push_back(focus_bin_id + bin_row_count + 1);
-    }
-
     return *neighbours;
+}
+
+
+
+MPI_Datatype MPI_BIN_TYPE;
+
+void init_MPI_bin_type() {
+    const int nitems = 7;
+    int blocklengths[7] = {1, 1, 1, 1, 1, 1, 1};
+    MPI_Datatype types[7] = {MPI_UINT64_T, MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE,
+                             MPI_DOUBLE,   MPI_DOUBLE, MPI_DOUBLE};
 }
 
 void init_simulation(particle_t* parts, int num_parts, double size, int rank, int num_procs) {
     printf("RANK %d:\n", rank);
 
+    init_MPI_bin_type();
 
-    bin_row_count = floor(size / cutoff);
+    bin_row_count = (int)floor(size / cutoff);
     bin_size = size / bin_row_count;
 
-    printf("SIZE %f - BIN SIZE %f - CUTOFF %f\n", size, bin_size, cutoff);
+    printf("SIZE %f - BIN SIZE %f - CUTOFF %f - BIN_ROW_COUNT %d\n", size, bin_size, cutoff, bin_row_count);
     bin_count = bin_row_count * bin_row_count;
 
     if(bin_count > num_procs) {
@@ -208,15 +288,15 @@ void init_simulation(particle_t* parts, int num_parts, double size, int rank, in
         int neighbours_size = (int)neighbour_ids[i].size();
         focus->init(focus_bin, neighbours_size);
 
-//        printf("F%d: ", focus->id());
+        printf("F%d: ", focus->id());
         for(int j = 0; j < neighbours_size; ++j) {
             bin_t* neighbour_bin = get_bin(neighbour_ids[i].at(j));
             focus->neighbours[j] = neighbour_bin;
-//            printf("%d ", neighbour_bin->id);
+            printf("%d ", neighbour_bin->id);
         }
 
 
-//        printf("\n");
+       printf("\n");
     }
 
     for(int i = 0; i < num_parts; ++i) {
@@ -242,8 +322,29 @@ void init_simulation(particle_t* parts, int num_parts, double size, int rank, in
 
 }
 
+void send_to_neighbours() {
+    //TODO
+}
+
 void simulate_one_step(particle_t* parts, int num_parts, double size, int rank, int num_procs) {
-    // Write this function
+    focus* focuses = bins.focuses;
+    for(int i = 0; i < focus_count; ++i)  {
+        focuses[i].apply_forces();
+    }
+    for(int i = 0; i < focus_count; ++i)  {
+        focuses[i].move_particles(size);
+    }
+
+    //TODO: Comunicazione
+    for(int i = 0; i < focus_count; ++i)  {//SEND
+        focus* focus = &focuses[i];
+        for(int dir_id = 0; dir_id < directions.size(); ++dir_id) {
+            if(directions_check[dir_id](focus->focus_bin->id)) {
+                MPI_Buffer_attach
+                MPI_Bsend()
+            }
+        }
+    }
 }
 
 void gather_for_save(particle_t* parts, int num_parts, double size, int rank, int num_procs) {
