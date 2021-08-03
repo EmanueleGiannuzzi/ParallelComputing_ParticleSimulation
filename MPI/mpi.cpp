@@ -6,12 +6,15 @@
 
 using namespace std;
 
-
 struct bin_t {
     int id;
     vector<particle_t*> particles;
 
     bin_t() {}
+
+    bin_t(int buffer[], int size) {
+        deserialize(buffer, size);
+    }
 
     bin_t(int _id){
         init(_id);
@@ -27,6 +30,42 @@ struct bin_t {
 
     void clear() {
         particles.clear();
+    }
+
+    //Remember to delete the buffer, please
+    int* serialize() {
+        int buffer_size = (2 * sizeof(int)) + (particles.size() * sizeof(particle_t));
+        char* buffer = new char[buffer_size];//TODO: Delete
+        char* pointer = buffer;
+        memcpy(pointer, &id,  sizeof(int));
+        pointer += sizeof(int);
+        int size = particles.size();
+        memcpy(pointer, &size,  sizeof(int));
+        pointer += sizeof(int);
+        for(int i = 0; i < size; ++i) {
+            memcpy(pointer, particles[i],  sizeof(particle_t));
+            pointer += sizeof(particle_t);
+        }
+    }
+
+    void deserialize(char buffer[], particle_t* parts, int parts_size) {
+        char* pointer = buffer;
+        memcpy(&id, pointer, sizeof(int));
+        pointer += sizeof(int);
+        int size = 0;
+        memcpy(&size, pointer, sizeof(int));
+        pointer += sizeof(int);
+        for(int i = 0; i < size; ++i) {
+            particle_t particle;
+            memcpy(&particle, pointer, sizeof(particle_t));
+            pointer += sizeof(particle_t);
+            for(int j = 0; j < parts_size; ++j) {
+                if(parts[j].id == particle.id) {
+                    memcpy(&parts[j], &particle, sizeof(particle_t));
+                    break;
+                }
+            }
+        }
     }
 };
 
