@@ -28,36 +28,23 @@ struct bin_t {
         particles.clear();
     }
 
-    unsigned long get_buffer_size() const{
-        return (particles.size() * sizeof(particle_t)) + (2 * sizeof(int));
+    unsigned long get_size() const{
+        return particles.size();
     }
 };
 
 //Remember to delete the buffer, please
-char* serialize_bin_data(const bin_t* bin) {
-    unsigned long  buffer_size = bin->get_buffer_size();
-    char* buffer = new char[buffer_size];//TODO: Delete
-    char* pointer = buffer;
-    memcpy(pointer, &bin->id,  sizeof(int));
-    pointer += sizeof(int);
-    size_t size = bin->particles.size();
-    memcpy(pointer, &size,  sizeof(size_t));
-    pointer += sizeof(int);
-    for(int i = 0; i < size; ++i) {
-        memcpy(pointer, bin->particles[i],  sizeof(particle_t));
-        pointer += sizeof(particle_t);
+particle_t* serialize_bin_data(const bin_t* bin) {
+    unsigned long buffer_size = bin->get_size();
+    particle_t* buffer = (particle_t*)malloc(buffer_size * sizeof(particle_t));
+    for(int i = 0; i < buffer_size; ++i) {
+        memcpy(&buffer[i], bin->particles[i], sizeof(particle_t));
     }
     return buffer;
 }
 
-void deserialize_bin_data(const char buffer[], particle_t* parts, int parts_size) {
-    const char* pointer = buffer;
-    size_t id;
-    memcpy(&id, pointer, sizeof(size_t));
-    pointer += sizeof(int);
-    int size = 0;
-    memcpy(&size, pointer, sizeof(int));
-    pointer += sizeof(int);
+void deserialize_bin_data(particle_t buffer[], int size, particle_t* parts, int parts_size) {
+    const particle_t* pointer = buffer;
     for(int i = 0; i < size; ++i) {
         particle_t particle;
         memcpy(&particle, pointer, sizeof(particle_t));
@@ -392,23 +379,34 @@ void init_simulation(particle_t* parts, int num_parts, double size, int rank, in
 
 }
 
-void send_to_neighbours(const focus* focuses, vector<MPI_Request>& requests) {
+void send_to_neighbours(const focus* focuses) {
+    vector<MPI_Request*> requests;
+    vector<particle_t*> send_buffers;
+
     for(int i = 0; i < focus_count; ++i)  {//SEND
         const focus* focus = &focuses[i];
-        char* buffer = serialize_bin_data(focus->focus_bin);
-        int buffer_size = focus->focus_bin->get_buffer_size();
+        particle_t* buffer = serialize_bin_data(focus->focus_bin);
+        unsigned long buffer_size = focus->focus_bin->get_size();
         for(int dir_id = 0; dir_id < directions.size(); ++dir_id) {
             if(directions_check[dir_id](focus->focus_bin->id)) {
                 int neighbour_bin_id = directions[dir_id](focus->id());
                 int dest_rank = get_rank_from_bin_id(neighbour_bin_id);
-                //TODO: If rank == my rank don't send
+
                 if(dest_rank != my_rank) {
-                    MPI_Request request;
-                    MPI_Isend(buffer, buffer_size, MPI_BYTE, dest_rank, MPI_ANY_TAG, MPI_COMM_WORLD, &request);
+                    MPI_Request* request = new MPI_Request();
+                    MPI_Isend(buffer, (int)buffer_size, PARTICLE, dest_rank, MPI_ANY_TAG, MPI_COMM_WORLD, request);
                     requests.push_back(request);
                 }
             }
         }
+        send_buffers.push_back(buffer);
+    }
+    for (MPI_Request* request : requests) {//TODO: DOPO RECV (deadlock)
+        MPI_Wait(request, MPI_STATUS_IGNORE);
+        delete request;
+    }
+    for (particle_t* send_buffer : send_buffers) {
+        delete[] send_buffer;
     }
 }
 
@@ -422,10 +420,11 @@ void receive_from_neighbours(const focus* focuses, particle_t* parts, int parts_
                 MPI_Status status;
                 MPI_Probe(source_rank, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
                 int buffer_size;
-                MPI_Get_count(&status, MPI_BYTE, &buffer_size);
-                char buffer[buffer_size];
-                MPI_Recv(buffer, buffer_size, MPI_BYTE, source_rank, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-                deserialize_bin_data(buffer, parts, parts_size);
+                MPI_Get_count(&status, PARTICLE, &buffer_size);
+                particle_t* buffer = (particle_t*)malloc(buffer_size * sizeof(particle_t));
+                MPI_Recv(buffer, buffer_size, PARTICLE, source_rank, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);//TODO: Usare Irecv con MPI_Waitany
+                deserialize_bin_data(buffer, buffer_size, parts, parts_size);
+                delete buffer;
             }
         }
     }
@@ -440,16 +439,16 @@ void simulate_one_step(particle_t* parts, int num_parts, double size, int rank, 
         focuses[i].move_particles(size);
     }
 
-    //TODO: Comunicazione
-    vector<MPI_Request> requests;
-    send_to_neighbours(focuses, requests);
-    receive_from_neighbours(focuses, parts, num_parts);
+    //TODO usare stesso buffer per MPI_Request di send/recv
+    send_to_neighbours(focuses);
+    //TODO: Usare MPI_Testany per eventualmente svuotare send buffer
+    receive_from_neighbours(focuses, parts, num_parts);//Blocking
+
+    //TODO: Svuoto send/receive buffer
 
 
-
-    for(int i = 0; i < focus_count; ++i) {//RECEIVE
-        focus *focus = &focuses[i];
-    }
+    //TODO: Rebinning
+    //MPI_Barrier(MPI_COMM_WORLD);
 }
 
 void gather_for_save(particle_t* parts, int num_parts, double size, int rank, int num_procs) {
