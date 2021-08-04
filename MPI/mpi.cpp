@@ -12,10 +12,6 @@ struct bin_t {
 
     bin_t() {}
 
-    bin_t(int buffer[], int size) {
-        deserialize(buffer, size);
-    }
-
     bin_t(int _id){
         init(_id);
     }
@@ -32,42 +28,48 @@ struct bin_t {
         particles.clear();
     }
 
-    //Remember to delete the buffer, please
-    int* serialize() {
-        int buffer_size = (2 * sizeof(int)) + (particles.size() * sizeof(particle_t));
-        char* buffer = new char[buffer_size];//TODO: Delete
-        char* pointer = buffer;
-        memcpy(pointer, &id,  sizeof(int));
-        pointer += sizeof(int);
-        int size = particles.size();
-        memcpy(pointer, &size,  sizeof(int));
-        pointer += sizeof(int);
-        for(int i = 0; i < size; ++i) {
-            memcpy(pointer, particles[i],  sizeof(particle_t));
-            pointer += sizeof(particle_t);
-        }
+    unsigned long get_buffer_size() const{
+        return (particles.size() * sizeof(particle_t)) + (2 * sizeof(int));
     }
+};
 
-    void deserialize(char buffer[], particle_t* parts, int parts_size) {
-        char* pointer = buffer;
-        memcpy(&id, pointer, sizeof(int));
-        pointer += sizeof(int);
-        int size = 0;
-        memcpy(&size, pointer, sizeof(int));
-        pointer += sizeof(int);
-        for(int i = 0; i < size; ++i) {
-            particle_t particle;
-            memcpy(&particle, pointer, sizeof(particle_t));
-            pointer += sizeof(particle_t);
-            for(int j = 0; j < parts_size; ++j) {
-                if(parts[j].id == particle.id) {
-                    memcpy(&parts[j], &particle, sizeof(particle_t));
-                    break;
-                }
+//Remember to delete the buffer, please
+char* serialize_bin_data(const bin_t* bin) {
+    unsigned long  buffer_size = bin->get_buffer_size();
+    char* buffer = new char[buffer_size];//TODO: Delete
+    char* pointer = buffer;
+    memcpy(pointer, &bin->id,  sizeof(int));
+    pointer += sizeof(int);
+    size_t size = bin->particles.size();
+    memcpy(pointer, &size,  sizeof(size_t));
+    pointer += sizeof(int);
+    for(int i = 0; i < size; ++i) {
+        memcpy(pointer, bin->particles[i],  sizeof(particle_t));
+        pointer += sizeof(particle_t);
+    }
+    return buffer;
+}
+
+void deserialize_bin_data(const char buffer[], particle_t* parts, int parts_size) {
+    const char* pointer = buffer;
+    size_t id;
+    memcpy(&id, pointer, sizeof(size_t));
+    pointer += sizeof(int);
+    int size = 0;
+    memcpy(&size, pointer, sizeof(int));
+    pointer += sizeof(int);
+    for(int i = 0; i < size; ++i) {
+        particle_t particle;
+        memcpy(&particle, pointer, sizeof(particle_t));
+        pointer += sizeof(particle_t);
+        for(int j = 0; j < parts_size; ++j) {//TODO: Maybe use a map?
+            if(parts[j].id == particle.id) {
+                memcpy(&parts[j], &particle, sizeof(particle_t));
+                break;
             }
         }
     }
-};
+}
 
 map<int, bin_t*> bin_data;
 
@@ -85,6 +87,8 @@ bin_t* get_bin(int id, bool create_new = true) {
 
 // Put any static global variables here that you will use throughout the simulation.
 
+int num_procs;
+int my_rank;
 double bin_size;
 int bin_count;
 int bin_row_count;
@@ -207,7 +211,7 @@ struct focus {
         neighbours = new bin_t*[_neighbours_size];
     }
 
-     int id() {
+     int id() const{
         return focus_bin->id;
     }
 
@@ -257,19 +261,43 @@ int normal_to_alternate_sqmatrix_id(int id, int size) {
 
 int* get_focus_ids(int rank) {
     focus_count = bin_per_proc;
-    bool extra = bin_count % bin_per_proc != 0;
+    int extra_count = bin_count % num_procs;
+    bool extra = extra_count != 0;
     if(rank == 0 && extra) {
-        focus_count++;
+        focus_count += extra_count;
+    }
+    if(bin_per_proc == 1 && rank >= bin_count) {
+        focus_count = 0;
     }
     int* local_b_ids = new int[focus_count];
 
-    int start = rank * bin_per_proc + (rank == 0 ? 0 : (extra ? 1 : 0));
+    int start = rank * bin_per_proc + (rank == 0 ? 0 : (extra ? extra_count : 0));
     for(int i = 0 ; i < focus_count ; i++ ) {
         int alternate_id = normal_to_alternate_sqmatrix_id(start + i, bin_row_count);
         local_b_ids[i] = alternate_id;
     }
 
     return local_b_ids;
+}
+
+int get_rank_from_bin_id(int bin_id) {
+    bin_id = normal_to_alternate_sqmatrix_id(bin_id, bin_row_count);
+
+    int extra_count = bin_count % num_procs;
+    bool extra = extra_count != 0;
+    if(extra) {
+        int rank0_bin_count = bin_per_proc + extra_count;
+        if(bin_id < rank0_bin_count) {
+            return 0;
+        }
+        else {
+            return ((bin_id - rank0_bin_count ) / bin_per_proc) + 1;
+        }
+    }
+    else {
+        return (int)(bin_id / bin_per_proc);
+    }
+
 }
 
 vector<int>& get_bin_neightbors_id(int focus_bin_id) {
@@ -293,10 +321,13 @@ void init_MPI_bin_type() {
                              MPI_DOUBLE,   MPI_DOUBLE, MPI_DOUBLE};
 }
 
-void init_simulation(particle_t* parts, int num_parts, double size, int rank, int num_procs) {
+void init_simulation(particle_t* parts, int num_parts, double size, int rank, int _num_procs) {
     printf("RANK %d:\n", rank);
 
     init_MPI_bin_type();
+
+    num_procs = _num_procs;
+    my_rank = rank;
 
     bin_row_count = (int)floor(size / cutoff);
     bin_size = size / bin_row_count;
@@ -361,8 +392,43 @@ void init_simulation(particle_t* parts, int num_parts, double size, int rank, in
 
 }
 
-void send_to_neighbours() {
-    //TODO
+void send_to_neighbours(const focus* focuses, vector<MPI_Request>& requests) {
+    for(int i = 0; i < focus_count; ++i)  {//SEND
+        const focus* focus = &focuses[i];
+        char* buffer = serialize_bin_data(focus->focus_bin);
+        int buffer_size = focus->focus_bin->get_buffer_size();
+        for(int dir_id = 0; dir_id < directions.size(); ++dir_id) {
+            if(directions_check[dir_id](focus->focus_bin->id)) {
+                int neighbour_bin_id = directions[dir_id](focus->id());
+                int dest_rank = get_rank_from_bin_id(neighbour_bin_id);
+                //TODO: If rank == my rank don't send
+                if(dest_rank != my_rank) {
+                    MPI_Request request;
+                    MPI_Isend(buffer, buffer_size, MPI_BYTE, dest_rank, MPI_ANY_TAG, MPI_COMM_WORLD, &request);
+                    requests.push_back(request);
+                }
+            }
+        }
+    }
+}
+
+void receive_from_neighbours(const focus* focuses, particle_t* parts, int parts_size) {
+    for(int i = 0; i < focus_count; ++i) {//SEND
+        const focus *focus = &focuses[i];
+        for(int dir_id = 0; dir_id < directions.size(); ++dir_id) {
+            if(directions_check[dir_id](focus->focus_bin->id)) {
+                int neighbour_bin_id = directions[dir_id](focus->id());
+                int source_rank = get_rank_from_bin_id(neighbour_bin_id);
+                MPI_Status status;
+                MPI_Probe(source_rank, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+                int buffer_size;
+                MPI_Get_count(&status, MPI_BYTE, &buffer_size);
+                char buffer[buffer_size];
+                MPI_Recv(buffer, buffer_size, MPI_BYTE, source_rank, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                deserialize_bin_data(buffer, parts, parts_size);
+            }
+        }
+    }
 }
 
 void simulate_one_step(particle_t* parts, int num_parts, double size, int rank, int num_procs) {
@@ -375,14 +441,14 @@ void simulate_one_step(particle_t* parts, int num_parts, double size, int rank, 
     }
 
     //TODO: Comunicazione
-    for(int i = 0; i < focus_count; ++i)  {//SEND
-        focus* focus = &focuses[i];
-        for(int dir_id = 0; dir_id < directions.size(); ++dir_id) {
-            if(directions_check[dir_id](focus->focus_bin->id)) {
-                MPI_Buffer_attach
-                MPI_Bsend()
-            }
-        }
+    vector<MPI_Request> requests;
+    send_to_neighbours(focuses, requests);
+    receive_from_neighbours(focuses, parts, num_parts);
+
+
+
+    for(int i = 0; i < focus_count; ++i) {//RECEIVE
+        focus *focus = &focuses[i];
     }
 }
 
