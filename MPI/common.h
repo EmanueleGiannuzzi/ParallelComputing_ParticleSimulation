@@ -22,6 +22,10 @@ typedef struct particle_t {
     double vy;   // Velocity Y
     double ax;   // Acceleration X
     double ay;   // Acceleration Y
+
+    void print() const {
+        printf("PARTICLE %lu: [%f, %f, %f, %f, %f, %f]\n", id, x, y, vx, vy, ax, ay);
+    }
 } particle_t;
 
 extern MPI_Datatype PARTICLE;
