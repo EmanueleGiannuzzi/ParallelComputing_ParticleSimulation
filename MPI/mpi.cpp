@@ -379,21 +379,19 @@ void init_simulation(particle_t* parts, int num_parts, double size, int rank, in
 
 }
 
-void send_to_neighbours(const focus* focuses) {
-    vector<MPI_Request*> requests;
-    vector<particle_t*> send_buffers;
-
+void start_send_to_neighbours(const focus* focuses, vector<MPI_Request*>& requests, vector<particle_t*>& send_buffers) {
     for(int i = 0; i < focus_count; ++i)  {//SEND
         const focus* focus = &focuses[i];
         particle_t* buffer = serialize_bin_data(focus->focus_bin);
         unsigned long buffer_size = focus->focus_bin->get_size();
+        MPI_Request* request;
         for(int dir_id = 0; dir_id < directions.size(); ++dir_id) {
             if(directions_check[dir_id](focus->focus_bin->id)) {
                 int neighbour_bin_id = directions[dir_id](focus->id());
                 int dest_rank = get_rank_from_bin_id(neighbour_bin_id);
 
                 if(dest_rank != my_rank) {
-                    MPI_Request* request = new MPI_Request();
+                    request = new MPI_Request();
                     MPI_Isend(buffer, (int)buffer_size, PARTICLE, dest_rank, MPI_ANY_TAG, MPI_COMM_WORLD, request);
                     requests.push_back(request);
                 }
@@ -401,18 +399,35 @@ void send_to_neighbours(const focus* focuses) {
         }
         send_buffers.push_back(buffer);
     }
-    for (MPI_Request* request : requests) {//TODO: DOPO RECV (deadlock)
-        MPI_Wait(request, MPI_STATUS_IGNORE);
+}
+
+void wait_and_clear_buffer(vector<MPI_Request*>& requests, vector<particle_t*>& buffers) {
+    MPI_Waitall((int) requests.size(), requests.front(), MPI_STATUS_IGNORE);
+    for(MPI_Request* request : requests) {
         delete request;
     }
-    for (particle_t* send_buffer : send_buffers) {
-        delete[] send_buffer;
+    for(particle_t* buffer : buffers) {
+        free(buffer);
     }
 }
 
-void receive_from_neighbours(const focus* focuses, particle_t* parts, int parts_size) {
+void clear_requests_ready_only(vector<MPI_Request*>& requests, vector<particle_t*>& buffers) {
+    int index, flag;
+    do {
+        MPI_Testany((int) requests.size(), requests.front(), &index, &flag, MPI_STATUS_IGNORE);
+        if(flag) {
+            free(buffers[index]);
+            buffers.erase(buffers.begin() + index);
+        }
+    } while (flag);
+}
+
+void start_receive_from_neighbours(const focus* focuses, particle_t* parts, int parts_size,
+                                   vector<MPI_Request*>& requests, vector<particle_t*>& receive_buffers) {
     for(int i = 0; i < focus_count; ++i) {//SEND
         const focus *focus = &focuses[i];
+        MPI_Request* request;
+        particle_t* buffer;
         for(int dir_id = 0; dir_id < directions.size(); ++dir_id) {
             if(directions_check[dir_id](focus->focus_bin->id)) {
                 int neighbour_bin_id = directions[dir_id](focus->id());
@@ -421,13 +436,22 @@ void receive_from_neighbours(const focus* focuses, particle_t* parts, int parts_
                 MPI_Probe(source_rank, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
                 int buffer_size;
                 MPI_Get_count(&status, PARTICLE, &buffer_size);
-                particle_t* buffer = (particle_t*)malloc(buffer_size * sizeof(particle_t));
-                MPI_Recv(buffer, buffer_size, PARTICLE, source_rank, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);//TODO: Usare Irecv con MPI_Waitany
+                buffer = (particle_t*)malloc(buffer_size * sizeof(particle_t));
+                request = new MPI_Request();
+                MPI_Irecv(buffer, buffer_size, PARTICLE, source_rank, MPI_ANY_TAG, MPI_COMM_WORLD, request);//TODO: Usare Irecv con MPI_Waitany
+                requests.push_back(request);
                 deserialize_bin_data(buffer, buffer_size, parts, parts_size);
-                delete buffer;
+                receive_buffers.push_back(buffer);
             }
         }
     }
+}
+
+template <typename T>
+void  merge_vectors(const vector<T>& A, const vector<T>& B, std::vector<T>& AB) {
+    AB.reserve(A.size() + B.size());
+    AB.insert(AB.end(), A.begin(), A.end());
+    AB.insert(AB.end(), B.begin(), B.end());
 }
 
 void simulate_one_step(particle_t* parts, int num_parts, double size, int rank, int num_procs) {
@@ -439,16 +463,29 @@ void simulate_one_step(particle_t* parts, int num_parts, double size, int rank, 
         focuses[i].move_particles(size);
     }
 
-    //TODO usare stesso buffer per MPI_Request di send/recv
-    send_to_neighbours(focuses);
-    //TODO: Usare MPI_Testany per eventualmente svuotare send buffer
-    receive_from_neighbours(focuses, parts, num_parts);//Blocking
+    vector<MPI_Request*> send_requests;
+    vector<particle_t*> send_buffers;
+    start_send_to_neighbours(focuses, send_requests, send_buffers);
+    clear_requests_ready_only(send_requests, send_buffers);
 
-    //TODO: Svuoto send/receive buffer
+    vector<MPI_Request*> receive_requests;
+    vector<particle_t*> receive_buffers;
+    start_receive_from_neighbours(focuses, parts, num_parts, receive_requests, receive_buffers);//Blocking
 
+//    vector<MPI_Request*> all_requests;
+//    vector<particle_t*> all_buffers;
+//    merge_vectors(receive_requests, send_requests, all_requests);
+//    merge_vectors(receive_buffers, send_buffers, all_buffers);
+//    wait_and_clear_buffer(all_requests, all_buffers);
+
+    wait_and_clear_buffer(receive_requests, receive_buffers);
+    clear_requests_ready_only(send_requests, send_buffers);
 
     //TODO: Rebinning
     //MPI_Barrier(MPI_COMM_WORLD);
+
+
+    wait_and_clear_buffer(send_requests, send_buffers);
 }
 
 void gather_for_save(particle_t* parts, int num_parts, double size, int rank, int num_procs) {
