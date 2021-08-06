@@ -152,7 +152,6 @@ int main(int argc, char** argv) {
     // Algorithm
     auto start_time = std::chrono::steady_clock::now();
 
-    if(rank == 0)
     init_simulation(parts, num_parts, size, rank, num_procs);
 
     for (int step = 0; step < nsteps; ++step) {
