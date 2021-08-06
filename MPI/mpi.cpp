@@ -446,7 +446,7 @@ void start_receive_from_neighbours(const focus* focuses, particle_t* parts, int 
                 MPI_Get_count(&status, PARTICLE, &buffer_size);
                 buffer = (particle_t*)malloc(buffer_size * sizeof(particle_t));
                 request = new MPI_Request();
-                MPI_Irecv(buffer, buffer_size, PARTICLE, source_rank, MPI_ANY_TAG, MPI_COMM_WORLD, request);//TODO: Usare Irecv con MPI_Waitany
+                MPI_Irecv(buffer, buffer_size, PARTICLE, source_rank, MPI_ANY_TAG, MPI_COMM_WORLD, request);
                 requests.push_back(request);
                 deserialize_bin_data(buffer, buffer_size, parts, particle_count);
                 receive_buffers.push_back(buffer);
@@ -483,14 +483,40 @@ void simulate_one_step(particle_t* parts, int particle_count, double size, int r
     MPI_Barrier(MPI_COMM_WORLD);
 }
 
-void gather_for_save(particle_t* parts, int num_parts, double size, int rank, int num_procs) {
+void gather_for_save(particle_t* parts, int particle_count, double size, int rank, int num_procs) {
     // Write this function such that at the end of it, the master (rank == 0)
     // processor has an in-order view of all particles. That is, the array
     // parts is complete and sorted by particle id.
 
-//    for(int i = 0; i < focus_count; i++) {
-//        neighbour_ids[i]->clear();
-//        delete neighbour_ids[i];
-//    }
-//    delete focus_ids;
+    if(rank != 0) {
+        vector<particle_t> buffer;
+        const focus* focuses = bins.focuses;
+        for(int i = 0; i < focus_count; ++i)  {
+            const focus* focus = &focuses[i];
+            particle_t* focus_buffer = serialize_bin_data(focus->focus_bin);
+            unsigned long focus_particle_count = focus->focus_bin->get_size();
+
+            for(int j = 0; j < focus_particle_count; ++j) {
+                buffer.push_back(focus_buffer[j]);
+            }
+        }
+
+        MPI_Send(&buffer.front(), (int)buffer.size(), PARTICLE, 0, MPI_ANY_TAG, MPI_COMM_WORLD);
+    }
+    else {
+        for(int i = 0; i < num_procs -1; ++i) {
+            particle_t* buffer;
+            MPI_Status status;
+            MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+            int source_rank = status.MPI_SOURCE;
+            int buffer_size;
+            MPI_Get_count(&status, PARTICLE, &buffer_size);
+            buffer = (particle_t*)malloc(buffer_size * sizeof(particle_t));
+            MPI_Recv(buffer, buffer_size, PARTICLE, source_rank, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+            deserialize_bin_data(buffer, buffer_size, parts, particle_count);
+
+            delete buffer;
+        }
+    }
 }
