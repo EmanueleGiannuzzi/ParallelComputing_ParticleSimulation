@@ -308,7 +308,22 @@ void init_MPI_bin_type() {
                              MPI_DOUBLE,   MPI_DOUBLE, MPI_DOUBLE};
 }
 
-void init_simulation(particle_t* parts, int num_parts, double size, int rank, int _num_procs) {
+void binning(particle_t* parts, int particle_count) {
+    for(int i = 0; i < particle_count; ++i) {
+        particle_t particle = parts[i];
+        int particle_bin_id = get_bin_id(particle);
+        bin_t* particle_bin = get_bin(particle_bin_id, false);
+        if(particle_bin != nullptr) {
+            particle_bin->add_particle(&particle);
+            printf("Part%d(%f,%f) in bin %d\n", i, particle.x, particle.y, particle_bin_id);
+        }
+        else {
+            printf("Part%d outside\n", i);
+        }
+    }
+}
+
+void init_simulation(particle_t* parts, int particle_count, double size, int rank, int _num_procs) {
     printf("RANK %d:\n", rank);
 
     init_MPI_bin_type();
@@ -356,18 +371,7 @@ void init_simulation(particle_t* parts, int num_parts, double size, int rank, in
        printf("\n");
     }
 
-    for(int i = 0; i < num_parts; ++i) {
-        particle_t particle = parts[i];
-        int particle_bin_id = get_bin_id(particle);
-        bin_t* particle_bin = get_bin(particle_bin_id, false);
-        if(particle_bin != nullptr) {
-            particle_bin->add_particle(&particle);
-            printf("Part%d(%f,%f) in bin %d\n", i, particle.x, particle.y, particle_bin_id);
-        }
-        else {
-            printf("Part%d outside\n", i);
-        }
-    }
+    binning(parts, particle_count);
 
 //    for (auto const& x : bin_data) {
 //        printf("BIND ID: %d\n", x.first);
@@ -402,6 +406,10 @@ void start_send_to_neighbours(const focus* focuses, vector<MPI_Request*>& reques
 }
 
 void wait_and_clear_buffer(vector<MPI_Request*>& requests, vector<particle_t*>& buffers) {
+    if(requests.empty() || buffers.empty()) {
+        return;
+    }
+
     MPI_Waitall((int) requests.size(), requests.front(), MPI_STATUS_IGNORE);
     for(MPI_Request* request : requests) {
         delete request;
@@ -422,7 +430,7 @@ void clear_requests_ready_only(vector<MPI_Request*>& requests, vector<particle_t
     } while (flag);
 }
 
-void start_receive_from_neighbours(const focus* focuses, particle_t* parts, int parts_size,
+void start_receive_from_neighbours(const focus* focuses, particle_t* parts, int particle_count,
                                    vector<MPI_Request*>& requests, vector<particle_t*>& receive_buffers) {
     for(int i = 0; i < focus_count; ++i) {//SEND
         const focus *focus = &focuses[i];
@@ -440,21 +448,14 @@ void start_receive_from_neighbours(const focus* focuses, particle_t* parts, int 
                 request = new MPI_Request();
                 MPI_Irecv(buffer, buffer_size, PARTICLE, source_rank, MPI_ANY_TAG, MPI_COMM_WORLD, request);//TODO: Usare Irecv con MPI_Waitany
                 requests.push_back(request);
-                deserialize_bin_data(buffer, buffer_size, parts, parts_size);
+                deserialize_bin_data(buffer, buffer_size, parts, particle_count);
                 receive_buffers.push_back(buffer);
             }
         }
     }
 }
 
-template <typename T>
-void  merge_vectors(const vector<T>& A, const vector<T>& B, std::vector<T>& AB) {
-    AB.reserve(A.size() + B.size());
-    AB.insert(AB.end(), A.begin(), A.end());
-    AB.insert(AB.end(), B.begin(), B.end());
-}
-
-void simulate_one_step(particle_t* parts, int num_parts, double size, int rank, int num_procs) {
+void simulate_one_step(particle_t* parts, int particle_count, double size, int rank, int num_procs) {
     focus* focuses = bins.focuses;
     for(int i = 0; i < focus_count; ++i)  {
         focuses[i].apply_forces();
@@ -470,22 +471,16 @@ void simulate_one_step(particle_t* parts, int num_parts, double size, int rank, 
 
     vector<MPI_Request*> receive_requests;
     vector<particle_t*> receive_buffers;
-    start_receive_from_neighbours(focuses, parts, num_parts, receive_requests, receive_buffers);//Blocking
-
-//    vector<MPI_Request*> all_requests;
-//    vector<particle_t*> all_buffers;
-//    merge_vectors(receive_requests, send_requests, all_requests);
-//    merge_vectors(receive_buffers, send_buffers, all_buffers);
-//    wait_and_clear_buffer(all_requests, all_buffers);
+    start_receive_from_neighbours(focuses, parts, particle_count, receive_requests, receive_buffers);//Blocking
 
     wait_and_clear_buffer(receive_requests, receive_buffers);
     clear_requests_ready_only(send_requests, send_buffers);
 
-    //TODO: Rebinning
-    //MPI_Barrier(MPI_COMM_WORLD);
-
+    binning(parts, particle_count);
 
     wait_and_clear_buffer(send_requests, send_buffers);
+
+    MPI_Barrier(MPI_COMM_WORLD);
 }
 
 void gather_for_save(particle_t* parts, int num_parts, double size, int rank, int num_procs) {
