@@ -29,14 +29,15 @@ struct bin_t {
         particles.clear();
     }
 
-    unsigned long get_size() const{
+    unsigned long size() const{
         return particles.size();
     }
 };
 
 //Remember to delete the buffer, please
 particle_t* serialize_bin_data(const bin_t* bin) {
-    unsigned long buffer_size = bin->get_size();
+    unsigned long buffer_size = bin->size();
+
     particle_t* buffer = (particle_t*)malloc(buffer_size * sizeof(particle_t));
     for(int i = 0; i < buffer_size; ++i) {
         memcpy(&buffer[i], bin->particles[i], sizeof(particle_t));
@@ -170,16 +171,20 @@ void move(particle_t& p, double size) {
     p.x += p.vx * dt;
     p.y += p.vy * dt;
 
+    printf("BANANA\n");
     // Bounce from walls
     while (p.x < 0 || p.x > size) {
         p.x = p.x < 0 ? -p.x : 2 * size - p.x;
         p.vx = -p.vx;
     }
+    printf("BANANA1\n");
 
     while (p.y < 0 || p.y > size) {
         p.y = p.y < 0 ? -p.y : 2 * size - p.y;
         p.vy = -p.vy;
     }
+
+    printf("BANANA3\n");
 }
 
 struct focus {
@@ -215,8 +220,12 @@ struct focus {
     }
 
     void move_particles(double size) {
+        if(focus_bin->particles.empty()) {
+            return;
+        }
         for(particle_t* focus_particle : focus_bin->particles){
             move(*focus_particle, size);
+            printf("A\n");
         }
     }
 };
@@ -298,36 +307,127 @@ vector<int>& get_bin_neightbors_id(int focus_bin_id) {
     return *neighbours;
 }
 
-
-
-MPI_Datatype MPI_BIN_TYPE;
-
-void init_MPI_bin_type() {
-    const int nitems = 7;
-    int blocklengths[7] = {1, 1, 1, 1, 1, 1, 1};
-    MPI_Datatype types[7] = {MPI_UINT64_T, MPI_DOUBLE, MPI_DOUBLE, MPI_DOUBLE,
-                             MPI_DOUBLE,   MPI_DOUBLE, MPI_DOUBLE};
-}
-
 void binning(particle_t* parts, int particle_count) {
+
+//    printf("BANANA %d\n", particle_count);
     for(int i = 0; i < particle_count; ++i) {
         particle_t* particle = &parts[i];
         int particle_bin_id = get_bin_id(*particle);
         bin_t* particle_bin = get_bin(particle_bin_id, false);
         if(particle_bin != nullptr) {
             particle_bin->add_particle(particle);
+//            printf("Added particle to bin %d ---- %d\n", particle_bin_id, particle_bin->size());
         }
     }
 }
 
+void start_send_to_neighbours(const focus* focuses, vector<MPI_Request*>& requests, vector<particle_t*>& send_buffers) {
+    for(int i = 0; i < focus_count; ++i)  {
+        const focus* focus = &focuses[i];
+        particle_t* buffer = serialize_bin_data(focus->focus_bin);
+        unsigned long buffer_size = focus->focus_bin->size();
+
+        MPI_Request* request;
+        for(int dir_id = 0; dir_id < directions.size(); ++dir_id) {
+            if(directions_check[dir_id](focus->focus_bin->id)) {
+                int neighbour_bin_id = directions[dir_id](focus->id());
+                int dest_rank = get_rank_from_bin_id(neighbour_bin_id);
+
+                if(dest_rank != my_rank) {
+                    request = new MPI_Request();
+                    MPI_Isend(buffer, (int)buffer_size, PARTICLE, dest_rank, 0, MPI_COMM_WORLD, request);
+                    printf(">Rank %d sent to %d, %d particles\n", my_rank, dest_rank, (int)buffer_size);
+                    requests.push_back(request);
+                }
+            }
+        }
+        send_buffers.push_back(buffer);
+    }
+}
+
+void wait_and_clear_buffer(vector<MPI_Request*>& requests, vector<particle_t*>& buffers) {
+    if(requests.empty() || buffers.empty()) {
+        return;
+    }
+    MPI_Request arr[requests.size()];
+    for(int i = 0; i < requests.size(); ++i) {
+        arr[i] = *requests[i];
+    }
+
+    MPI_Waitall((int) requests.size(), arr, MPI_STATUSES_IGNORE);
+    for(MPI_Request* request : requests) {
+        delete request;
+    }
+    for(particle_t* buffer : buffers) {
+        free(buffer);
+    }
+}
+
+void clear_requests_ready_only(vector<MPI_Request*>& requests, vector<particle_t*>& buffers) {
+    int index, flag;
+    do {
+        MPI_Testany((int) requests.size(), requests.front(), &index, &flag, MPI_STATUS_IGNORE);
+        if(flag) {
+            free(buffers[index]);
+            buffers.erase(buffers.begin() + index);
+            MPI_Request_free(*(requests.begin() + index));
+            requests.erase(requests.begin() + index);
+
+        }
+    } while (flag);
+}
+
+bool is_my_focus(const focus* focuses, int bin_id) {
+    for(int i = 0; i < focus_count; ++i) {
+        if(focuses[i].id() == bin_id){
+            return true;
+        }
+    }
+    return false;
+}
+
+int get_receive_count(const focus* focuses) {
+    int count = 0;
+    for(int i = 0; i < focus_count; ++i) {
+        const focus *focus = &focuses[i];
+        for(int j = 0; j < focus->neighbours_size; ++j) {
+            int neighbor_id = focus->neighbours[j]->id;
+            if(!is_my_focus(focuses, neighbor_id)) {
+                count++;
+            }
+        }
+    }
+    return count;
+}
+
+
+void start_receive_from_neighbours(const focus* focuses, particle_t* parts, int particle_count) {
+    int receive_count = 0;
+    int max_receive_count = get_receive_count(focuses);
+
+    printf("RECEIVE COUNT %d: %d\n", my_rank, max_receive_count);
+    while(receive_count < max_receive_count) {
+        MPI_Status status;
+        MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+        int buffer_size = 0;
+        MPI_Get_count(&status, PARTICLE, &buffer_size);
+        int source_rank = status.MPI_SOURCE;
+
+//        printf("Rank %d receiving from %d, %d particles\n", my_rank, source_rank, buffer_size);
+        particle_t* buffer = (particle_t*)malloc(buffer_size * sizeof(particle_t));
+        MPI_Recv(buffer, buffer_size, PARTICLE, source_rank, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        deserialize_bin_data(buffer, buffer_size, parts, particle_count);
+        receive_count++;
+        printf("[%d] Received %d\n", my_rank, receive_count);
+    }
+}
+
 void init_simulation(particle_t* parts, int particle_count, double size, int rank, int _num_procs) {
-    printf("RANK %d:\n", rank);
+//    printf("RANK %d:\n", rank);
 
 //    for(int i = 0; i < particle_count; ++i) {
 //        parts[i].print();
 //    }
-
-    init_MPI_bin_type();
 
     num_procs = _num_procs;
     my_rank = rank;
@@ -361,15 +461,15 @@ void init_simulation(particle_t* parts, int particle_count, double size, int ran
         int neighbours_size = (int)neighbour_ids[i].size();
         focus->init(focus_bin, neighbours_size);
 
-        printf("F%d: ", focus->id());
+//        printf("F%d: ", focus->id());
         for(int j = 0; j < neighbours_size; ++j) {
             bin_t* neighbour_bin = get_bin(neighbour_ids[i].at(j));
             focus->neighbours[j] = neighbour_bin;
-            printf("%d ", neighbour_bin->id);
+//            printf("%d ", neighbour_bin->id);
         }
 
 
-       printf("\n");
+//       printf("\n");
     }
 
     binning(parts, particle_count);
@@ -380,119 +480,41 @@ void init_simulation(particle_t* parts, int particle_count, double size, int ran
 //            printf("%d:(%f,%f) -- ", x.first, particle->x, particle->y);
 //        }
 //    }
-
-
 }
 
-void start_send_to_neighbours(const focus* focuses, vector<MPI_Request*>& requests, vector<particle_t*>& send_buffers) {
-    for(int i = 0; i < focus_count; ++i)  {
-        const focus* focus = &focuses[i];
-        particle_t* buffer = serialize_bin_data(focus->focus_bin);
-        unsigned long buffer_size = focus->focus_bin->get_size();
-        MPI_Request* request;
-        for(int dir_id = 0; dir_id < directions.size(); ++dir_id) {
-            if(directions_check[dir_id](focus->focus_bin->id)) {
-                int neighbour_bin_id = directions[dir_id](focus->id());
-                int dest_rank = get_rank_from_bin_id(neighbour_bin_id);
-
-                if(dest_rank != my_rank) {
-                    request = new MPI_Request();
-                    MPI_Isend(buffer, (int)buffer_size, PARTICLE, dest_rank, 0, MPI_COMM_WORLD, request);
-                    requests.push_back(request);
-                }
-            }
-        }
-        send_buffers.push_back(buffer);
-    }
-}
-
-void wait_and_clear_buffer(vector<MPI_Request*>& requests, vector<particle_t*>& buffers) {
-    if(requests.empty() || buffers.empty()) {
-        return;
-    }
-
-    MPI_Waitall((int) requests.size(), requests.front(), MPI_STATUS_IGNORE);
-    for(MPI_Request* request : requests) {
-        delete request;
-    }
-    for(particle_t* buffer : buffers) {
-        free(buffer);
-    }
-}
-
-void clear_requests_ready_only(vector<MPI_Request*>& requests, vector<particle_t*>& buffers) {
-//    int index, flag;
-//    do {
-//        MPI_Testany((int) requests.size(), requests.front(), &index, &flag, MPI_STATUS_IGNORE);
-//        if(flag) {
-//            free(buffers[index]);
-//            buffers.erase(buffers.begin() + index);
-//            MPI_Request_free(*(requests.begin() + index));
-//            requests.erase(requests.begin() + index);
-//
-//        }
-//    } while (flag);
-}
-
-void start_receive_from_neighbours(const focus* focuses, particle_t* parts, int particle_count,
-                                   vector<MPI_Request*>& requests, vector<particle_t*>& receive_buffers) {
-    for(int i = 0; i < focus_count; ++i) {
-        const focus *focus = &focuses[i];
-        MPI_Request* request;
-        particle_t* buffer;
-        for(int dir_id = 0; dir_id < directions.size(); ++dir_id) {
-            if(directions_check[dir_id](focus->focus_bin->id)) {
-                int neighbour_bin_id = directions[dir_id](focus->id());
-                int source_rank = get_rank_from_bin_id(neighbour_bin_id);
-                MPI_Status status;
-                MPI_Probe(source_rank, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
-                int buffer_size = 0;
-                MPI_Get_count(&status, PARTICLE, &buffer_size);
-                buffer = (particle_t*)malloc(buffer_size * sizeof(particle_t));
-                request = new MPI_Request();
-                MPI_Irecv(buffer, buffer_size, PARTICLE, source_rank, MPI_ANY_TAG, MPI_COMM_WORLD, request);
-                requests.push_back(request);
-                deserialize_bin_data(buffer, buffer_size, parts, particle_count);
-                receive_buffers.push_back(buffer);
-            }
-        }
-    }
-}
 
 void simulate_one_step(particle_t* parts, int particle_count, double size, int rank, int num_procs) {
-    printf("-----------RANK %d STEP\n", rank);
+    printf("-----------RANK %d[%d] STEP.\n", rank, focus_count);
     focus* focuses = bins.focuses;
-    for(int i = 0; i < focus_count; ++i)  {
-        focuses[i].apply_forces();
-    }
-
-    for(int i = 0; i < focus_count; ++i)  {
-        printf("COSE %d\n", i);
-        focuses[i].move_particles(size);
-    }
+//    for(int i = 0; i < focus_count; ++i)  {
+//        focuses[i].apply_forces();
+//    }
+//
+//    for(int i = 0; i < focus_count; ++i)  {
+//        printf("COSE %d\n", rank);
+//        focuses[i].move_particles(size);
+//    }
 
     printf("-----------RANK %d Done simulating\n", rank);
 
     vector<MPI_Request*> send_requests;
     vector<particle_t*> send_buffers;
     start_send_to_neighbours(focuses, send_requests, send_buffers);
-    clear_requests_ready_only(send_requests, send_buffers);
+//    clear_requests_ready_only(send_requests, send_buffers);
 
     printf("-----------RANK %d Done sending\n", rank);
 
-    vector<MPI_Request*> receive_requests;
-    vector<particle_t*> receive_buffers;
-    start_receive_from_neighbours(focuses, parts, particle_count, receive_requests, receive_buffers);//Blocking
+    start_receive_from_neighbours(focuses, parts, particle_count);//Blocking
 
     printf("-----------RANK %d Done receive\n", rank);
 
-    wait_and_clear_buffer(receive_requests, receive_buffers);
-    clear_requests_ready_only(send_requests, send_buffers);
+//    clear_requests_ready_only(send_requests, send_buffers);
 
     binning(parts, particle_count);
 
     wait_and_clear_buffer(send_requests, send_buffers);
 
+    printf("Barried reached %d", rank);
     MPI_Barrier(MPI_COMM_WORLD);
 }
 
@@ -507,7 +529,7 @@ void gather_for_save(particle_t* parts, int particle_count, double size, int ran
         for(int i = 0; i < focus_count; ++i)  {
             const focus* focus = &focuses[i];
             particle_t* focus_buffer = serialize_bin_data(focus->focus_bin);
-            unsigned long focus_particle_count = focus->focus_bin->get_size();
+            unsigned long focus_particle_count = focus->focus_bin->size();
 
             for(int j = 0; j < focus_particle_count; ++j) {
                 buffer.push_back(focus_buffer[j]);
