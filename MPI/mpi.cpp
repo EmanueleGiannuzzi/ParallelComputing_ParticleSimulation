@@ -149,6 +149,7 @@ void apply_force(particle_t& particle, particle_t& neighbor) {
     double dy = neighbor.y - particle.y;
     double r2 = dx * dx + dy * dy;
 
+
     // Check if the two particles should interact
     if (r2 > cutoff * cutoff)
         return;
@@ -175,9 +176,7 @@ void move(particle_t& p, double size) {
     while (p.x < 0 || p.x > size) {
         p.x = p.x < 0 ? -p.x : 2 * size - p.x;
         p.vx = -p.vx;
-//        printf("LOOP %lu %f\n", p.id, p.x);
-//        printf("LOOP2 %lu %f\n", p.id, p.vx);
-    }//LOOP inf
+    }
 
     while (p.y < 0 || p.y > size) {
         p.y = p.y < 0 ? -p.y : 2 * size - p.y;
@@ -208,10 +207,12 @@ struct focus {
 
     void apply_forces() {
         for(particle_t* focus_particle : focus_bin->particles){
-            focus_particle->ax = focus_particle->ay = 0;
+            focus_particle->ax = 0;
+            focus_particle->ay = 0;
 
             for(int i = 0; i < neighbours_size; ++i) {
                 bin_t* neighbour_bin = neighbours[i];
+
                 for(particle_t* neighbour_particle : neighbour_bin->particles){
                     apply_force(*focus_particle, *neighbour_particle);
                 }
@@ -321,6 +322,13 @@ void binning(particle_t* parts, int particle_count) {
 //            printf("Added particle to bin %d ---- %d\n", particle_bin_id, particle_bin->size());
         }
     }
+
+    int count = 0;
+    for (const auto& kv : bin_data) {
+        auto particles = kv.second->particles;
+        count += particles.size();
+    }
+    printf("BINNING %d\n", count);
 }
 
 void start_send_to_neighbours(const focus* focuses, vector<MPI_Request*>& requests, vector<particle_t*>& send_buffers) {
@@ -494,6 +502,7 @@ void simulate_one_step(particle_t* parts, int particle_count, double size, int r
 //        printf("COSE %d\n", rank);
         focuses[i].move_particles(size);
     }
+      binning(parts, particle_count);
     return;
 
     printf("-----------RANK %d Done simulating\n", rank);
