@@ -308,8 +308,11 @@ vector<int>& get_bin_neightbors_id(int focus_bin_id) {
 }
 
 void binning(particle_t* parts, int particle_count) {
-
 //    printf("BANANA %d\n", particle_count);
+    for (const auto& kv : bin_data) {
+        kv.second->clear();
+    }
+
     for(int i = 0; i < particle_count; ++i) {
         particle_t* particle = &parts[i];
         int particle_bin_id = get_bin_id(*particle);
@@ -418,8 +421,8 @@ void start_receive_from_neighbours(const focus* focuses, particle_t* parts, int 
         MPI_Recv(buffer, buffer_size, PARTICLE, source_rank, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         deserialize_bin_data(buffer, buffer_size, parts, particle_count);
         receive_count++;
-        printf("[%d] Received %d\n", my_rank, receive_count);
     }
+    printf("[myrank:%d] Received: %d\n", my_rank, receive_count);
 }
 
 void init_simulation(particle_t* parts, int particle_count, double size, int rank, int _num_procs) {
@@ -467,8 +470,6 @@ void init_simulation(particle_t* parts, int particle_count, double size, int ran
             focus->neighbours[j] = neighbour_bin;
 //            printf("%d ", neighbour_bin->id);
         }
-
-
 //       printf("\n");
     }
 
@@ -514,7 +515,7 @@ void simulate_one_step(particle_t* parts, int particle_count, double size, int r
 
     wait_and_clear_buffer(send_requests, send_buffers);
 
-    printf("Barried reached %d", rank);
+    printf("Barrier reached %d\n", rank);
     MPI_Barrier(MPI_COMM_WORLD);
 }
 

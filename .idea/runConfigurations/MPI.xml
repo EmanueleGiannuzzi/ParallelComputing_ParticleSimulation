@@ -1,5 +1,5 @@
 <component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="MPI" type="CMakeRunConfiguration" factoryName="Application" singleton="false" PROGRAM_PARAMS="-np 4 ./MPI -n 3 -s 42 -o mpi.parts.out" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" WORKING_DIR="file://$PROJECT_DIR$/MPI/MPI_out" PASS_PARENT_ENVS_2="true" PROJECT_NAME="ParallelComputing_ParticleSimulation" TARGET_NAME="MPI" CONFIG_NAME="Debug" RUN_PATH="/usr/bin/mpirun">
+  <configuration default="false" name="MPI" type="CMakeRunConfiguration" factoryName="Application" singleton="false" PROGRAM_PARAMS="-np 1 ./MPI -n 1000 -s 42 -o mpi.parts.out" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" WORKING_DIR="file://$PROJECT_DIR$/MPI/MPI_out" PASS_PARENT_ENVS_2="true" PROJECT_NAME="ParallelComputing_ParticleSimulation" TARGET_NAME="MPI" CONFIG_NAME="Debug" RUN_PATH="/usr/bin/mpirun">
     <method v="2">
       <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
     </method>
