@@ -171,20 +171,18 @@ void move(particle_t& p, double size) {
     p.x += p.vx * dt;
     p.y += p.vy * dt;
 
-    printf("BANANA\n");
     // Bounce from walls
     while (p.x < 0 || p.x > size) {
         p.x = p.x < 0 ? -p.x : 2 * size - p.x;
         p.vx = -p.vx;
-    }
-    printf("BANANA1\n");
+//        printf("LOOP %lu %f\n", p.id, p.x);
+//        printf("LOOP2 %lu %f\n", p.id, p.vx);
+    }//LOOP inf
 
     while (p.y < 0 || p.y > size) {
         p.y = p.y < 0 ? -p.y : 2 * size - p.y;
         p.vy = -p.vy;
     }
-
-    printf("BANANA3\n");
 }
 
 struct focus {
@@ -209,9 +207,11 @@ struct focus {
     }
 
     void apply_forces() {
-        for(int i = 0; i < neighbours_size; ++i) {
-            bin_t* neighbour_bin = neighbours[i];
-            for(particle_t* focus_particle : focus_bin->particles){
+        for(particle_t* focus_particle : focus_bin->particles){
+            focus_particle->ax = focus_particle->ay = 0;
+
+            for(int i = 0; i < neighbours_size; ++i) {
+                bin_t* neighbour_bin = neighbours[i];
                 for(particle_t* neighbour_particle : neighbour_bin->particles){
                     apply_force(*focus_particle, *neighbour_particle);
                 }
@@ -225,7 +225,6 @@ struct focus {
         }
         for(particle_t* focus_particle : focus_bin->particles){
             move(*focus_particle, size);
-            printf("A\n");
         }
     }
 };
@@ -408,7 +407,7 @@ void start_receive_from_neighbours(const focus* focuses, particle_t* parts, int 
     int receive_count = 0;
     int max_receive_count = get_receive_count(focuses);
 
-    printf("RECEIVE COUNT %d: %d\n", my_rank, max_receive_count);
+    printf("[myrank:%d] RECEIVE COUNT %d\n", my_rank, max_receive_count);
     while(receive_count < max_receive_count) {
         MPI_Status status;
         MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
@@ -485,16 +484,17 @@ void init_simulation(particle_t* parts, int particle_count, double size, int ran
 
 
 void simulate_one_step(particle_t* parts, int particle_count, double size, int rank, int num_procs) {
-    printf("-----------RANK %d[%d] STEP.\n", rank, focus_count);
+    printf("-----------RANK %d[focus_count:%d] STEP.\n", rank, focus_count);
     focus* focuses = bins.focuses;
-//    for(int i = 0; i < focus_count; ++i)  {
-//        focuses[i].apply_forces();
-//    }
-//
-//    for(int i = 0; i < focus_count; ++i)  {
+    for(int i = 0; i < focus_count; ++i)  {
+        focuses[i].apply_forces();
+    }
+
+    for(int i = 0; i < focus_count; ++i)  {
 //        printf("COSE %d\n", rank);
-//        focuses[i].move_particles(size);
-//    }
+        focuses[i].move_particles(size);
+    }
+    return;
 
     printf("-----------RANK %d Done simulating\n", rank);
 

@@ -145,6 +145,14 @@ int main(int argc, char** argv) {
 
     if (rank == 0) {
         init_particles(parts, num_parts, size, part_seed);
+
+        for(int i = 0; i < num_parts; ++i)  {
+            if(parts[i].x > 1 || parts[i].vx > 1 || parts[i].ax > 1) {
+                printf("BANANA1 %f\n", parts[i].x);
+                printf("BANANA2 %f\n", parts[i].vx);
+                printf("BANANA3 %f\n", parts[i].ax);
+            }
+        }
     }
 
     MPI_Bcast(parts, num_parts, PARTICLE, 0, MPI_COMM_WORLD);
