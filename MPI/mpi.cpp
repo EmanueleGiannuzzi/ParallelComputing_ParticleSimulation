@@ -5,39 +5,6 @@
 
 using namespace std;
 
-int banana = 0;
-
-int cose = 0;
-
-struct bin_t {
-    int id;
-    vector<particle_t*> particles;
-
-    bin_t() {}
-
-    bin_t(int _id){
-        init(_id);
-    }
-
-    void init(int _id) {
-        id = _id;
-    }
-
-    void add_particle(particle_t* particle) {
-        particles.push_back(particle);
-
-        cose++;
-    }
-
-    void clear() {
-        particles.clear();
-    }
-
-    unsigned long size() const{
-        return particles.size();
-    }
-};
-
 void apply_force(particle_t& particle, particle_t& neighbor) {
     // Calculate Distance
     double dx = neighbor.x - particle.x;
@@ -76,33 +43,52 @@ void move(particle_t& p, double size) {
     }
 }
 
-struct focus {
-    bin_t* focus_bin;
+struct bin_t {
+    int id;
+    vector<particle_t*> particles;
+
     bin_t** neighbours;
     int neighbours_size;
 
-    focus(bin_t* _focus, int _neighbours_size) {
-        init(_focus, neighbours_size);
+    bin_t() {}
+
+    bin_t(int _id){
+        init(_id);
     }
 
-    focus(){}
+    void init(int _id) {
+        id = _id;
+    }
 
-    void init(bin_t* _focus, int _neighbours_size) {
-        focus_bin = _focus;
+    void set_neighbours_size(int _neighbours_size) {
         neighbours_size = _neighbours_size;
         neighbours = new bin_t*[_neighbours_size];
     }
 
-    int id() const{
-        return focus_bin->id;
+    void add_particle(particle_t* particle) {
+        particles.push_back(particle);
+        if(id == 0) {
+            printf("C %zu\n", particles.size());
+        }
     }
 
+    void clear() {
+        particles.clear();
+
+        if(id == 0)
+            printf("CLEAR \n");
+    }
+
+    unsigned long size() const{
+        return particles.size();
+    }
+
+
     void apply_forces(particle_t* parts, int particle_count) {
-        for(particle_t* focus_particle : focus_bin->particles){
+        for(particle_t* focus_particle : particles){
             focus_particle->ax = 0;
             focus_particle->ay = 0;
 
-            banana++;
             for (int j = 0; j < particle_count; ++j) {
                 apply_force(*focus_particle, parts[j]);
             }
@@ -118,7 +104,7 @@ struct focus {
     }
 
     void move_particles(double size) {
-        for(particle_t* focus_particle : focus_bin->particles){
+        for(particle_t* focus_particle : particles) {
             move(*focus_particle, size);
         }
     }
@@ -128,7 +114,7 @@ double bin_size;
 int bin_count;
 int bin_row_count;
 int bin_per_proc;
-focus* focuses; //size: focus_count
+int* focus_ids;
 int focus_count;
 map<int, bin_t> bin_data;
 
@@ -232,7 +218,7 @@ vector<int>& get_bin_neighbours_id(int focus_bin_id) {
     return *neighbours;
 }
 
-bin_t* get_bin(int id, bool create_new = true) {
+bin_t* get_bin(int id, bool create_new) {
     if(bin_data.count(id) > 0) {
         return &bin_data[id];
     }
@@ -245,7 +231,7 @@ bin_t* get_bin(int id, bool create_new = true) {
 }
 
 void init_focuses(int rank, int num_procs) {
-    int *focus_ids = get_focus_ids(rank, num_procs);
+    focus_ids = get_focus_ids(rank, num_procs);
     vector<int> neighbour_ids[focus_count];
 
     for (int i = 0; i < focus_count; ++i) {
@@ -253,17 +239,14 @@ void init_focuses(int rank, int num_procs) {
         neighbour_ids[i] = get_bin_neighbours_id(focus_id);
     }
 
-    focuses = new focus[focus_count];
     for (int i = 0; i < focus_count; ++i) {
-        focus *focus = &focuses[i];
-
-        bin_t *focus_bin = get_bin(focus_ids[i]);
+        bin_t *focus_bin = get_bin(focus_ids[i], true);
         int neighbours_size = (int) neighbour_ids[i].size();
-        focus->init(focus_bin, neighbours_size);
+        focus_bin->set_neighbours_size(neighbours_size);
 
         for (int j = 0; j < neighbours_size; ++j) {
-            bin_t *neighbour_bin = get_bin(neighbour_ids[i].at(j));
-            focus->neighbours[j] = neighbour_bin;
+            bin_t *neighbour_bin = get_bin(neighbour_ids[i].at(j), true);
+            focus_bin->neighbours[j] = neighbour_bin;
         }
     }
 }
@@ -291,9 +274,10 @@ void binning(particle_t* parts, int particle_count) {
             throw runtime_error(errorMessage);
         }
     }
+}
 
-    printf("COSE3 %d\n", cose);
-    cose = 0;
+bin_t* get_focus(int focus_id) {
+    return get_bin(focus_ids[focus_id], false);
 }
 
 void init_simulation(particle_t* parts, int num_parts, double size, int rank, int num_procs) {
@@ -304,30 +288,17 @@ void init_simulation(particle_t* parts, int num_parts, double size, int rank, in
 
 void simulate_focuses(double size, particle_t* parts, int particle_count) {
     for(int i = 0; i < focus_count; ++i)  {
-        focuses[i].apply_forces(parts, particle_count);
+        get_focus(i)->apply_forces(parts, particle_count);
     }
 
     for(int i = 0; i < focus_count; ++i)  {
-        focuses[i].move_particles(size);
+        get_focus(i)->move_particles(size);
     }
 }
 
 void simulate_one_step(particle_t* parts, int num_parts, double size, int rank, int num_procs) {
     simulate_focuses(size, parts, num_parts);
     binning(parts, num_parts);
-
-
-//    int count = 0;
-//    for (auto& kv : bin_data) {
-//        count += kv.second.size();
-//    }
-    int count = 0;
-    for(int i = 0; i < focus_count; ++i)  {
-        count += focuses[i].focus_bin->size();
-    }
-    printf("BANANA %d %d \n", banana, count);
-    banana = 0;
-//    printf("-----------RANK %d Done simulating\n", rank);
 }
 
 void gather_for_save(particle_t* parts, int num_parts, double size, int rank, int num_procs) {
