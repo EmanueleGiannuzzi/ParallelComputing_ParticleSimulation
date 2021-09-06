@@ -1,5 +1,5 @@
 <component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="Naive" type="CMakeRunConfiguration" factoryName="Application" singleton="false" PROGRAM_PARAMS="-n 100 -s 42 -o naive.parts.out" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" WORKING_DIR="file://$PROJECT_DIR$/Naive/Naive_out" PASS_PARENT_ENVS_2="true" PROJECT_NAME="ParallelComputing_ParticleSimulation" TARGET_NAME="Naive" CONFIG_NAME="Debug" RUN_TARGET_PROJECT_NAME="ParallelComputing_ParticleSimulation" RUN_TARGET_NAME="Naive">
+  <configuration default="false" name="Naive" type="CMakeRunConfiguration" factoryName="Application" singleton="false" PROGRAM_PARAMS="-n 1000 -s 42 -o naive.parts.out" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" WORKING_DIR="file://$PROJECT_DIR$/Naive/Naive_out" PASS_PARENT_ENVS_2="true" PROJECT_NAME="ParallelComputing_ParticleSimulation" TARGET_NAME="Naive" CONFIG_NAME="Debug" RUN_TARGET_PROJECT_NAME="ParallelComputing_ParticleSimulation" RUN_TARGET_NAME="Naive">
     <method v="2">
       <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
     </method>

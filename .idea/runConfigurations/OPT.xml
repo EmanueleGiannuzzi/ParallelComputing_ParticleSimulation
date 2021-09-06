@@ -1,5 +1,5 @@
 <component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="OPT" type="CMakeRunConfiguration" factoryName="Application" singleton="false" PROGRAM_PARAMS="-n 100 -s 42 -o opt.parts.out" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" WORKING_DIR="file://$PROJECT_DIR$/CUDA/CUDA_out" PASS_PARENT_ENVS_2="true" PROJECT_NAME="ParallelComputing_ParticleSimulation" TARGET_NAME="OPT" CONFIG_NAME="Debug" RUN_TARGET_PROJECT_NAME="ParallelComputing_ParticleSimulation" RUN_TARGET_NAME="OPT">
+  <configuration default="false" name="OPT" type="CMakeRunConfiguration" factoryName="Application" singleton="false" PROGRAM_PARAMS="-n 1000 -s 42 -o opt.parts.out" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" WORKING_DIR="file://$PROJECT_DIR$/CUDA/CUDA_out" PASS_PARENT_ENVS_2="true" PROJECT_NAME="ParallelComputing_ParticleSimulation" TARGET_NAME="OPT" CONFIG_NAME="Debug" RUN_TARGET_PROJECT_NAME="ParallelComputing_ParticleSimulation" RUN_TARGET_NAME="OPT">
     <envs>
       <env name="-DCMAKE_CUDA_HOST_COMPILER" value="/usr/bin/nvcc -DCMAKE_CUDA_FLAGS=&quot;-ccbin /usr/bin/nvcc&quot; " />
     </envs>

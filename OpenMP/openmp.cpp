@@ -1,7 +1,6 @@
 #include "common.h"
 #include <omp.h>
 #include <cmath>
-#include <iostream>
 #include <vector>
 
 // Put any static global variables here that you will use throughout the simulation.
@@ -69,8 +68,8 @@ double bin_size;
 
 int inline get_bin_id(particle_t& particle) {
     int x, y;
-    y = particle.y / bin_size;
-    x = particle.x / bin_size;
+    y = (int) (particle.y / bin_size);
+    x = (int) (particle.x / bin_size);
     if (x == bin_row_count) {
         x--;
     }
@@ -102,7 +101,7 @@ void init_simulation(particle_t* parts, int num_parts, double size_) {
 #pragma omp single
     {
         size = size_;
-        bin_row_count = size / cutoff;
+        bin_row_count = (int) (size / cutoff);
         bin_count = bin_row_count * bin_row_count;
         bin_size = size / bin_row_count;
         bins = new bin_t[bin_count];
@@ -112,7 +111,7 @@ void init_simulation(particle_t* parts, int num_parts, double size_) {
     for (int i = 0; i < bin_count; i++) {
         omp_init_lock(&locks[i]);
     }
-#pragma omp parallel
+#pragma omp parallel default(none) shared(parts, num_parts)
     rebin(parts, num_parts);
 }
 
