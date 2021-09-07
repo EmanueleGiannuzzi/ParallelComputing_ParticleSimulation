@@ -16,8 +16,6 @@ void apply_force(particle_t& particle, particle_t& neighbor) {
     if (r2 > cutoff * cutoff)
         return;
 
-//    printf("Particle %lu collied with %lu\n", particle.id, neighbor.id);
-
     r2 = fmax(r2, min_r * min_r);
     double r = sqrt(r2);
 
@@ -44,6 +42,8 @@ void move(particle_t& p, double size) {
         p.y = p.y < 0 ? -p.y : 2 * size - p.y;
         p.vy = -p.vy;
     }
+
+//    printf("Particle %lu %f %f %f %f %f %f\n", p.id, p.x, p.y, p.vx, p.vy, p.ax, p.ay);
 }
 //endregion
 
@@ -86,15 +86,11 @@ struct bin_t {
         for(particle_t* focus_particle : particles){
             focus_particle->ax = 0;
             focus_particle->ay = 0;
-
-//            for (int j = 0; j < particle_count; ++j) {
-//                apply_force(*focus_particle, parts[j]);
-//            }
-
+            for(particle_t* neighbour_particle : particles){
+                apply_force(*focus_particle, *neighbour_particle);
+            }
             for(int i = 0; i < neighbours_size; ++i) {
-                bin_t* neighbour_bin = neighbours[i];
-
-                for(particle_t* neighbour_particle : neighbour_bin->particles){
+                for(particle_t* neighbour_particle : neighbours[i]->particles){
                     apply_force(*focus_particle, *neighbour_particle);
                 }
             }
@@ -188,17 +184,6 @@ void calculate_grid_parameters(double size, int num_procs) {
     }
 }
 
-int normal_to_alternate_sqmatrix_id(int id, int size) {
-    bool leftToRight = ((int)(id / size)) % 2 == 0;
-
-    if(leftToRight) {
-        return id;
-    }
-    else{
-        return (size - 1 - (id % size)) + (floor(id / size) * size);
-    }
-}
-
 int* get_focus_ids(int rank, int num_procs) {
     focus_count = bin_per_proc;
     int extra_count = bin_count % num_procs;
@@ -213,14 +198,14 @@ int* get_focus_ids(int rank, int num_procs) {
 
     int start = rank * bin_per_proc + (rank == 0 ? 0 : (extra ? extra_count : 0));
     for(int i = 0 ; i < focus_count ; i++ ) {
-        //int alternate_id = start + i;//TODO: normal_to_alternate_sqmatrix_id https://github.com/EmanueleGiannuzzi/ParallelComputing_ParticleSimulation/blob/98b553815fb5b516d3e0519c6e21bf0bb3f1623d/MPI/mpi.cpp#L248
-        int alternate_id = normal_to_alternate_sqmatrix_id(start + i, bin_row_count);
+        int alternate_id = start + i;//TODO: normal_to_alternate_sqmatrix_id https://github.com/EmanueleGiannuzzi/ParallelComputing_ParticleSimulation/blob/98b553815fb5b516d3e0519c6e21bf0bb3f1623d/MPI/mpi.cpp#L248
+        //int alternate_id = normal_to_alternate_sqmatrix_id(start + i, bin_row_count);
         local_b_ids[i] = alternate_id;
     }
     return local_b_ids;
 }
 
-vector<int>& get_bin_neighbours_id(int focus_bin_id) {
+vector<int>& get_bin_neighbours_ids(int focus_bin_id) {
     vector<int>* neighbours = new vector<int>();
     for(int i = 0; i<directions.size(); ++i) {
         if(directions_check[i](focus_bin_id)){
@@ -246,7 +231,7 @@ void init_focuses(int rank, int num_procs) {
 
     for (int i = 0; i < focus_count; ++i) {
         int focus_id = focus_ids[i];
-        neighbour_ids[i] = get_bin_neighbours_id(focus_id);
+        neighbour_ids[i] = get_bin_neighbours_ids(focus_id);
     }
 
     for (int i = 0; i < focus_count; ++i) {
@@ -417,7 +402,6 @@ void simulate_focuses(double size, particle_t* parts, int particle_count) {
 
 void simulate_one_step(particle_t* parts, int num_parts, double size, int rank, int num_procs) {
     simulate_focuses(size, parts, num_parts);
-
 
 //    vector<MPI_Request*> send_requests;
 //    vector<particle_t*> send_buffers;
