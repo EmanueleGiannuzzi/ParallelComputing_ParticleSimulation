@@ -1,7 +1,10 @@
 import subprocess
+from typing import List
+import numpy as np
 
 
-def run_naive(number_of_particles: int, particle_initialization_seed: int, cutoff: float) -> str:
+
+def run_naive(number_of_particles: int, particle_initialization_seed: int, cutoff: float) -> float:
     # store output of the program as a byte string in s
     s = subprocess.check_output("Naive/Naive_out/Naive -n {0} -s {1} -o Naive/Naive_out/naive.parts.out"
                                 .format(number_of_particles, particle_initialization_seed),
@@ -12,10 +15,10 @@ def run_naive(number_of_particles: int, particle_initialization_seed: int, cutof
     # decode s to a normal string
     output = s.decode("utf-8")
     print("Naive - " + output)
-    return output.split(" ")[3]
+    return float(output.split(" ")[3])
 
 
-def run_serial(number_of_particles: int, particle_initialization_seed: int, cutoff: float) -> str:
+def run_serial(number_of_particles: int, particle_initialization_seed: int, cutoff: float) -> float:
     s = subprocess.check_output("Serial/Serial_out/Serial -n {0} -s {1} -o Serial/Serial_out/serial.parts.out"
                                 .format(number_of_particles, particle_initialization_seed),
                                 shell=True)
@@ -27,10 +30,10 @@ def run_serial(number_of_particles: int, particle_initialization_seed: int, cuto
         .format(cutoff), shell=True)
     output = s.decode("utf-8")
     print("Serial - " + output + "    TRUE <-- Correctness-check")
-    return output.split(" ")[3]
+    return float(output.split(" ")[3])
 
 
-def run_openmp(number_of_particles: int, particle_initialization_seed: int, cutoff: float) -> str:
+def run_openmp(number_of_particles: int, particle_initialization_seed: int, cutoff: float) -> float:
     s = subprocess.check_output("OpenMP/OpenMP_out/OpenMP -n {0} -s {1} -o OpenMP/OpenMP_out/openmp.parts.out"
                                 .format(number_of_particles, particle_initialization_seed),
                                 shell=True)
@@ -42,10 +45,10 @@ def run_openmp(number_of_particles: int, particle_initialization_seed: int, cuto
         .format(cutoff), shell=True)
     output = s.decode("utf-8")
     print("OpenMP - " + output + "    TRUE <-- Correctness-check")
-    return output.split(" ")[3]
+    return float(output.split(" ")[3])
 
 
-def run_mpi(number_of_processes: int, number_of_particles: int, particle_initialization_seed: int, cutoff: float) -> str:
+def run_mpi(number_of_processes: int, number_of_particles: int, particle_initialization_seed: int, cutoff: float) -> float:
     s = subprocess.check_output("mpirun -n {0} MPI/MPI_out/MPI -n {1} -s {2} -o MPI/MPI_out/mpi.parts.out"
                                 .format(number_of_processes, number_of_particles, particle_initialization_seed),
                                 shell=True)
@@ -57,10 +60,10 @@ def run_mpi(number_of_processes: int, number_of_particles: int, particle_initial
         .format(cutoff), shell=True)
     output = s.decode("utf-8")
     print("MPI - " + output + "    TRUE <-- Correctness-check")
-    return output.split(" ")[3]
+    return float(output.split(" ")[3])
 
 
-def run_cuda(number_of_particles: int, particle_initialization_seed: int, cutoff: float) -> str:
+def run_cuda(number_of_particles: int, particle_initialization_seed: int, cutoff: float) -> float:
     s = subprocess.check_output("CUDA/CUDA_out/CUDA -n {0} -s {1} -o CUDA/CUDA_out/cuda.parts.out"
                                 .format(number_of_particles, particle_initialization_seed),
                                 shell=True)
@@ -72,10 +75,10 @@ def run_cuda(number_of_particles: int, particle_initialization_seed: int, cutoff
         .format(cutoff), shell=True)
     output = s.decode("utf-8")
     print("CUDA - " + output + "    TRUE <-- Correctness-check")
-    return output.split(" ")[3]
+    return float(output.split(" ")[3])
 
 
-def run_cuda_opt(number_of_particles: int, particle_initialization_seed: int, cutoff: float) -> str:
+def run_cuda_opt(number_of_particles: int, particle_initialization_seed: int, cutoff: float) -> float:
     s = subprocess.check_output("CUDA/CUDA_out/OPT -n {0} -s {1} -o CUDA/CUDA_out/opt.parts.out"
                                 .format(number_of_particles, particle_initialization_seed),
                                 shell=True)
@@ -87,20 +90,37 @@ def run_cuda_opt(number_of_particles: int, particle_initialization_seed: int, cu
         .format(cutoff), shell=True)
     output = s.decode("utf-8")
     print("OPT - " + output + "    TRUE <-- Correctness-check")
-    return output.split(" ")[3]
+    return float(output.split(" ")[3])
 
 
 if __name__ == "__main__":
-    number_of_particles: int = 1000
+    number_of_simulations: int = 3
+    number_of_particles_per_simulation: List[int] = [2**j for j in range(7, 7 + number_of_simulations)]
     particle_initialization_seed: int = 42
     cutoff: float = 0.01
-    number_of_processes: int = 6
+    max_number_of_processes: int = 6
 
-    naive_time = run_naive(number_of_particles, particle_initialization_seed, cutoff)
-    serial_time = run_serial(number_of_particles, particle_initialization_seed, cutoff)
-    openmp_time = run_openmp(number_of_particles, particle_initialization_seed, cutoff)
-    mpi_time = [run_mpi(i, number_of_particles, particle_initialization_seed, cutoff)
-                for i in range(1, number_of_processes + 1)]
-    cuda_time = run_cuda(number_of_particles, particle_initialization_seed, cutoff)
-    cuda_opt_time = run_cuda_opt(number_of_particles, particle_initialization_seed, cutoff)
+    naive_times: List[float] = []
+    serial_times: List[float] = []
+    openmp_times: List[float] = []
+    mpi_times: List[float] = []
+    cuda_times: List[float] = []
+    cuda_opt_times: List[float] = []
 
+    for number_of_particles in number_of_particles_per_simulation:
+        naive_times.append(run_naive(number_of_particles, particle_initialization_seed, cutoff))
+        serial_times.append(run_serial(number_of_particles, particle_initialization_seed, cutoff))
+        openmp_times.append(run_openmp(number_of_particles, particle_initialization_seed, cutoff))
+        mpi_times.append([run_mpi(i, number_of_particles, particle_initialization_seed, cutoff)
+                          for i in range(1, max_number_of_processes + 1)][-1])
+        cuda_times.append(run_cuda(number_of_particles, particle_initialization_seed, cutoff))
+        cuda_opt_times.append(run_cuda_opt(number_of_particles, particle_initialization_seed, cutoff))
+
+    timing_results = np.block([np.array(serial_times)[:, np.newaxis],
+                               np.array(openmp_times)[:, np.newaxis],
+                               np.array(mpi_times)[:, np.newaxis],
+                               np.array(cuda_times)[:, np.newaxis],
+                               np.array(cuda_opt_times)[:, np.newaxis]])
+    print("the output array has shape ", timing_results.shape, " with values:")
+    print(timing_results)
+    np.savetxt("timing_results.csv", X=timing_results, header="serial, openmp, mpi, cuda, cuda_opt", delimiter=",")
