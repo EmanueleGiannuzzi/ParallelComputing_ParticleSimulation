@@ -292,12 +292,12 @@ void binning(particle_t* parts, int particle_count) {
     for(int i = 0; i < particle_count; ++i) {
         particle_t* particle = &parts[i];
         int particle_bin_id = get_bin_id(*particle);
-        bin_t* particle_bin = get_bin(particle_bin_id, false);
+        bin_t* particle_bin = get_bin(particle_bin_id, true);
         if(particle_bin != nullptr) {
             particle_bin->add_particle(particle);
         }
         else {
-            string errorMessage = string("Particle ") + to_string(particle->id) + "not added to bin " + to_string(particle_bin_id);
+            string errorMessage = string("Particle ") + to_string(particle->id) + " not added to bin " + to_string(particle_bin_id);
             throw runtime_error(errorMessage);
         }
     }
