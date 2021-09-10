@@ -103,32 +103,6 @@ def run_mpi(number_of_processes: int,
     return float(output.split(" ")[3])
 
 
-def run_cuda(number_of_particles: int,
-             particle_initialization_seed: int,
-             cutoff: float,
-             correctness_check: bool,
-             rendering: bool) -> float:
-
-    s = subprocess.check_output("CUDA/CUDA_out/CUDA -n {0} -s {1} -o CUDA/CUDA_out/cuda.parts.out"
-                                .format(number_of_particles, particle_initialization_seed),
-                                shell=True)
-    output = s.decode("utf-8")
-    print("CUDA - " + output)
-
-    if correctness_check is True:
-        subprocess.check_call(
-            "python correctness-check/correctness-check.py CUDA/CUDA_out/cuda.parts.out Naive/Naive_out/naive.parts.out",
-            shell=True)
-        print("TRUE <-- Correctness-check")
-
-    if rendering is True:
-        subprocess.check_call(
-            "python rendering/render.py CUDA/CUDA_out/cuda.parts.out rendering/cuda_particles_{0}.gif {1}"
-            .format(number_of_particles, cutoff), shell=True)
-
-    return float(output.split(" ")[3])
-
-
 def run_cuda_opt(number_of_particles: int,
                  particle_initialization_seed: int,
                  cutoff: float,
@@ -156,7 +130,7 @@ def run_cuda_opt(number_of_particles: int,
 
 
 if __name__ == "__main__":
-    number_of_simulations: int = 4
+    number_of_simulations: int = 6
     number_of_particles_per_simulation: List[int] = [2**j for j in range(10, 10 + number_of_simulations)]
     particle_initialization_seed: int = 42
     cutoff: float = 0.01
@@ -168,7 +142,6 @@ if __name__ == "__main__":
     serial_times: List[float] = []
     openmp_times: List[float] = []
     mpi_times: List[List[float]] = []
-    cuda_times: List[float] = []
     cuda_opt_times: List[float] = []
 
     for number_of_particles in number_of_particles_per_simulation:
@@ -182,19 +155,16 @@ if __name__ == "__main__":
         mpi_times.append([run_mpi(i, number_of_particles, particle_initialization_seed, cutoff,
                                   correctness_check, rendering)
                           for i in range(1, max_number_of_processes + 1)])
-        cuda_times.append(run_cuda(number_of_particles, particle_initialization_seed, cutoff,
-                                   correctness_check, rendering))
         cuda_opt_times.append(run_cuda_opt(number_of_particles, particle_initialization_seed, cutoff,
                                            correctness_check, rendering))
 
-    np.savetxt("naive_times.csv", X=np.array(naive_times),
+    np.savetxt("results/naive_times.csv", X=np.array(naive_times),
                header="1, 2, 3, 4, 5, 6", delimiter=",")
-    np.savetxt("mpi_times.csv", X=np.array(mpi_times),
+    np.savetxt("results/mpi_times.csv", X=np.array(mpi_times),
                header="1, 2, 3, 4, 5, 6", delimiter=",")
     timing_results = np.block([np.array(serial_times)[:, np.newaxis],
                                np.array(openmp_times)[:, np.newaxis],
                                np.array([min(times) for times in mpi_times])[:, np.newaxis],
-                               np.array(cuda_times)[:, np.newaxis],
                                np.array(cuda_opt_times)[:, np.newaxis]])
-    np.savetxt("timing_results.csv", X=timing_results,
-               header="serial, openmp, mpi, cuda, cuda_opt", delimiter=",")
+    np.savetxt("results/timing_results.csv", X=timing_results,
+               header="serial, openmp, mpi, cuda_opt", delimiter=",")
