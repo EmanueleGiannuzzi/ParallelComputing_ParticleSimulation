@@ -1,6 +1,7 @@
 import subprocess
 from typing import List
 import numpy as np
+import os
 
 
 def run_naive(number_of_particles: int,
@@ -50,17 +51,20 @@ def run_serial(number_of_particles: int,
     return float(output.split(" ")[3])
 
 
-def run_openmp(number_of_particles: int,
+def run_openmp(number_of_threads: int,
+               number_of_particles: int,
                particle_initialization_seed: int,
                cutoff: float,
                correctness_check: bool,
                rendering: bool) -> float:
 
-    s = subprocess.check_output("OpenMP/OpenMP_out/OpenMP -n {0} -s {1} -o OpenMP/OpenMP_out/openmp.parts.out"
-                                .format(number_of_particles, particle_initialization_seed),
-                                shell=True)
+    my_env = os.environ.copy()
+    my_env['OMP_NUM_THREADS'] = str(number_of_threads)
+    c = "OpenMP/OpenMP_out/OpenMP -n {0} -s {1} -o OpenMP/OpenMP_out/openmp.parts.out"\
+        .format(number_of_particles, particle_initialization_seed)
+    s = subprocess.check_output(c, shell=True, env=my_env)
     output = s.decode("utf-8")
-    print("OpenMP - " + output)
+    print("OpenMP with {0} threads - ".format(number_of_threads) + output)
 
     if correctness_check is True:
         subprocess.check_call(
@@ -87,7 +91,7 @@ def run_mpi(number_of_processes: int,
                                 .format(number_of_processes, number_of_particles, particle_initialization_seed),
                                 shell=True)
     output = s.decode("utf-8")
-    print("MPI - " + output)
+    print("MPI with {0} processes - ".format(number_of_processes) + output)
 
     if correctness_check is True:
         subprocess.check_call(
@@ -140,7 +144,7 @@ if __name__ == "__main__":
 
     naive_times: List[float] = []
     serial_times: List[float] = []
-    openmp_times: List[float] = []
+    openmp_times: List[List[float]] = []
     mpi_times: List[List[float]] = []
     cuda_opt_times: List[float] = []
 
@@ -150,20 +154,23 @@ if __name__ == "__main__":
 
         serial_times.append(run_serial(number_of_particles, particle_initialization_seed, cutoff,
                                        correctness_check, rendering))
-        openmp_times.append(run_openmp(number_of_particles, particle_initialization_seed, cutoff,
-                                       correctness_check, rendering))
-        mpi_times.append([run_mpi(i, number_of_particles, particle_initialization_seed, cutoff,
+        openmp_times.append([run_openmp(i, number_of_particles, particle_initialization_seed, cutoff,
+                                        correctness_check, rendering)
+                             for i in range(1, max_number_of_processes * 2 + 1)])
+        mpi_times.append([run_mpi(j, number_of_particles, particle_initialization_seed, cutoff,
                                   correctness_check, rendering)
-                          for i in range(1, max_number_of_processes + 1)])
+                          for j in range(1, max_number_of_processes + 1)])
         cuda_opt_times.append(run_cuda_opt(number_of_particles, particle_initialization_seed, cutoff,
                                            correctness_check, rendering))
 
     np.savetxt("results/naive_times.csv", X=np.array(naive_times),
-               header="1, 2, 3, 4, 5, 6", delimiter=",")
+               header=str(number_of_particles_per_simulation), delimiter=",")
+    np.savetxt("results/openmp_times.csv", X=np.array(openmp_times),
+               header=str(number_of_particles_per_simulation), delimiter=",")
     np.savetxt("results/mpi_times.csv", X=np.array(mpi_times),
-               header="1, 2, 3, 4, 5, 6", delimiter=",")
+               header=str(number_of_particles_per_simulation), delimiter=",")
     timing_results = np.block([np.array(serial_times)[:, np.newaxis],
-                               np.array(openmp_times)[:, np.newaxis],
+                               np.array([min(times) for times in openmp_times])[:, np.newaxis],
                                np.array([min(times) for times in mpi_times])[:, np.newaxis],
                                np.array(cuda_opt_times)[:, np.newaxis]])
     np.savetxt("results/timing_results.csv", X=timing_results,
