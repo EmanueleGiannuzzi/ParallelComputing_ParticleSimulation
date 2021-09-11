@@ -7,7 +7,7 @@ import os
 def run_naive(number_of_particles: int,
               particle_initialization_seed: int,
               cutoff: float,
-              rendering: bool) -> float:
+              rendering: bool = False) -> float:
 
     # store output of the program as a byte string in s
     s = subprocess.check_output("Naive/Naive_out/Naive -n {0} -s {1} -o Naive/Naive_out/naive.parts.out"
@@ -28,24 +28,27 @@ def run_naive(number_of_particles: int,
 def run_serial(number_of_particles: int,
                particle_initialization_seed: int,
                cutoff: float,
-               correctness_check: bool,
-               rendering: bool) -> float:
+               correctness_check: bool = False,
+               rendering: bool = False,
+               heap_profiler: bool = False) -> float:
 
-    s = subprocess.check_output("Serial/Serial_out/Serial -n {0} -s {1} -o Serial/Serial_out/serial.parts.out"
-                                .format(number_of_particles, particle_initialization_seed),
-                                shell=True)
+    c = "Serial/Serial_out/Serial -n {0} -s {1} -o Serial/Serial_out/serial.parts.out"
+    s = subprocess.check_output(
+        (c if not heap_profiler else "valgrind --tool=massif --massif-out-file=heap-profiler/serial/massif.out.{0} "
+                                     + c).format(number_of_particles, particle_initialization_seed), shell=True)
     output = s.decode("utf-8")
     print("Serial - " + output)
 
     if correctness_check is True:
+        c = "python correctness-check/correctness-check.py"
         subprocess.check_call(
-            "python correctness-check/correctness-check.py Serial/Serial_out/serial.parts.out Naive/Naive_out/naive.parts.out",
-            shell=True)
+            c + " Serial/Serial_out/serial.parts.out Naive/Naive_out/naive.parts.out", shell=True)
         print("TRUE <-- Correctness-check")
 
     if rendering is True:
+        c = "python rendering/render.py"
         subprocess.check_call(
-            "python rendering/render.py Serial/Serial_out/serial.parts.out rendering/serial_particles_{0}.gif {1}"
+            c + " Serial/Serial_out/serial.parts.out rendering/serial_particles_{0}.gif {1}"
             .format(number_of_particles, cutoff), shell=True)
 
     return float(output.split(" ")[3])
@@ -55,26 +58,31 @@ def run_openmp(number_of_threads: int,
                number_of_particles: int,
                particle_initialization_seed: int,
                cutoff: float,
-               correctness_check: bool,
-               rendering: bool) -> float:
+               correctness_check: bool = False,
+               rendering: bool = False,
+               heap_profiler: bool = False) -> float:
 
     my_env = os.environ.copy()
     my_env['OMP_NUM_THREADS'] = str(number_of_threads)
-    c = "OpenMP/OpenMP_out/OpenMP -n {0} -s {1} -o OpenMP/OpenMP_out/openmp.parts.out"\
-        .format(number_of_particles, particle_initialization_seed)
-    s = subprocess.check_output(c, shell=True, env=my_env)
+    c = "OpenMP/OpenMP_out/OpenMP -n {0} -s {1} -o OpenMP/OpenMP_out/openmp.parts.out"
+    s = subprocess.check_output(
+        (c if not heap_profiler else "valgrind --tool=massif --massif-out-file=heap-profiler/openmp/massif.out.{0}_{2} "
+                                     + c).format(number_of_particles, particle_initialization_seed, number_of_threads),
+        shell=True, env=my_env)
     output = s.decode("utf-8")
     print("OpenMP with {0} threads - ".format(number_of_threads) + output)
 
     if correctness_check is True:
+        c = "python correctness-check/correctness-check.py"
         subprocess.check_call(
-            "python correctness-check/correctness-check.py OpenMP/OpenMP_out/openmp.parts.out Naive/Naive_out/naive.parts.out",
+            c + " OpenMP/OpenMP_out/openmp.parts.out Naive/Naive_out/naive.parts.out",
             shell=True)
         print("TRUE <-- Correctness-check")
 
     if rendering is True:
+        c = "python rendering/render.py"
         subprocess.check_call(
-            "python rendering/render.py OpenMP/OpenMP_out/openmp.parts.out rendering/openmp_particles_{0}.gif {1}"
+            c + " OpenMP/OpenMP_out/openmp.parts.out rendering/openmp_particles_{0}.gif {1}"
             .format(number_of_particles, cutoff), shell=True)
 
     return float(output.split(" ")[3])
@@ -84,24 +92,30 @@ def run_mpi(number_of_processes: int,
             number_of_particles: int,
             particle_initialization_seed: int,
             cutoff: float,
-            correctness_check: bool,
-            rendering: bool) -> float:
+            correctness_check: bool = False,
+            rendering: bool = False,
+            heap_profiler: bool = False) -> float:
 
-    s = subprocess.check_output("mpirun -n {0} MPI/MPI_out/MPI -n {1} -s {2} -o MPI/MPI_out/mpi.parts.out"
-                                .format(number_of_processes, number_of_particles, particle_initialization_seed),
-                                shell=True)
+    c1 = "mpirun -n {0}"
+    c2 = "MPI/MPI_out/MPI -n {1} -s {2} -o MPI/MPI_out/mpi.parts.out"
+    s = subprocess.check_output(
+        (c1 + c2 if not heap_profiler else
+         c1 + " valgrind --tool=massif --massif-out-file=heap-profiler/mpi/massif.out.{1}_{0}" + c2)
+        .format(number_of_processes, number_of_particles, particle_initialization_seed), shell=True)
     output = s.decode("utf-8")
     print("MPI with {0} processes - ".format(number_of_processes) + output)
 
     if correctness_check is True:
+        c = "python correctness-check/correctness-check.py"
         subprocess.check_call(
-            "python correctness-check/correctness-check.py MPI/MPI_out/mpi.parts.out Naive/Naive_out/naive.parts.out",
+            c + " MPI/MPI_out/mpi.parts.out Naive/Naive_out/naive.parts.out",
             shell=True)
         print("TRUE <-- Correctness-check")
 
     if rendering is True:
+        c = "python rendering/render.py"
         subprocess.check_call(
-            "python rendering/render.py MPI/MPI_out/mpi.parts.out rendering/mpi_particles_{0}.gif {1}"
+            c + " MPI/MPI_out/mpi.parts.out rendering/mpi_particles_{0}.gif {1}"
             .format(number_of_particles, cutoff), shell=True)
 
     return float(output.split(" ")[3])
@@ -110,8 +124,8 @@ def run_mpi(number_of_processes: int,
 def run_cuda_opt(number_of_particles: int,
                  particle_initialization_seed: int,
                  cutoff: float,
-                 correctness_check: bool,
-                 rendering: bool) -> float:
+                 correctness_check: bool = False,
+                 rendering: bool = False) -> float:
 
     s = subprocess.check_output("CUDA/CUDA_out/OPT -n {0} -s {1} -o CUDA/CUDA_out/opt.parts.out"
                                 .format(number_of_particles, particle_initialization_seed),
@@ -120,27 +134,31 @@ def run_cuda_opt(number_of_particles: int,
     print("OPT - " + output)
 
     if correctness_check is True:
+        c = "python correctness-check/correctness-check.py"
         subprocess.check_call(
-            "python correctness-check/correctness-check.py CUDA/CUDA_out/opt.parts.out Naive/Naive_out/naive.parts.out",
+            c + " CUDA/CUDA_out/opt.parts.out Naive/Naive_out/naive.parts.out",
             shell=True)
         print("TRUE <-- Correctness-check")
 
     if rendering is True:
+        c = "python rendering/render.py"
         subprocess.check_call(
-            "python rendering/render.py CUDA/CUDA_out/opt.parts.out rendering/opt_particles_{0}.gif {1}"
+            c + " CUDA/CUDA_out/opt.parts.out rendering/opt_particles_{0}.gif {1}"
             .format(number_of_particles, cutoff), shell=True)
 
     return float(output.split(" ")[3])
 
 
 if __name__ == "__main__":
-    number_of_simulations: int = 6
-    number_of_particles_per_simulation: List[int] = [2**j for j in range(10, 10 + number_of_simulations)]
+    number_of_simulations: int = 1
+    number_of_particles_per_simulation: List[int] = [2**j for j in range(12, 12 + number_of_simulations)]
     particle_initialization_seed: int = 42
     cutoff: float = 0.01
     max_number_of_processes: int = 6
+
     correctness_check: bool = False
     rendering: bool = False
+    heap_profiler: bool = False
 
     naive_times: List[float] = []
     serial_times: List[float] = []
@@ -150,24 +168,33 @@ if __name__ == "__main__":
 
     for number_of_particles in number_of_particles_per_simulation:
         if correctness_check is True:
-            naive_times.append(run_naive(number_of_particles, particle_initialization_seed, cutoff, rendering))
+            naive_times.append(
+                run_naive(number_of_particles, particle_initialization_seed, cutoff,
+                          rendering))
 
-        serial_times.append(run_serial(number_of_particles, particle_initialization_seed, cutoff,
-                                       correctness_check, rendering))
-        openmp_times.append([run_openmp(i, number_of_particles, particle_initialization_seed, cutoff,
-                                        correctness_check, rendering)
-                             for i in range(1, max_number_of_processes * 2 + 1)])
-        mpi_times.append([run_mpi(j, number_of_particles, particle_initialization_seed, cutoff,
-                                  correctness_check, rendering)
-                          for j in range(1, max_number_of_processes + 1)])
-        cuda_opt_times.append(run_cuda_opt(number_of_particles, particle_initialization_seed, cutoff,
-                                           correctness_check, rendering))
+        serial_times.append(
+            run_serial(number_of_particles, particle_initialization_seed, cutoff,
+                       correctness_check, rendering, heap_profiler))
+
+        openmp_times.append(
+            [run_openmp(i, number_of_particles, particle_initialization_seed, cutoff,
+                        correctness_check, rendering, heap_profiler)
+             for i in range(1, max_number_of_processes * 2 + 1)])
+
+        mpi_times.append(
+            [run_mpi(j, number_of_particles, particle_initialization_seed, cutoff,
+                     correctness_check, rendering, heap_profiler)
+             for j in range(1, max_number_of_processes + 1)])
+
+        cuda_opt_times.append(
+            run_cuda_opt(number_of_particles, particle_initialization_seed, cutoff,
+                         correctness_check, rendering))
 
     np.savetxt("results/naive_times.csv", X=np.array(naive_times),
                header=str(number_of_particles_per_simulation), delimiter=",")
-    np.savetxt("results/openmp_times.csv", X=np.array(openmp_times),
+    np.savetxt("results/openmp/openmp_times.csv", X=np.array(openmp_times),
                header=str(number_of_particles_per_simulation), delimiter=",")
-    np.savetxt("results/mpi_times.csv", X=np.array(mpi_times),
+    np.savetxt("results/mpi/mpi_times.csv", X=np.array(mpi_times),
                header=str(number_of_particles_per_simulation), delimiter=",")
     timing_results = np.block([np.array(serial_times)[:, np.newaxis],
                                np.array([min(times) for times in openmp_times])[:, np.newaxis],
