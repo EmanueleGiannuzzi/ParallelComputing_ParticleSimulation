@@ -24,9 +24,9 @@ void apply_force(particle_t& particle, particle_t& neighbor) {
     particle.ax += coef * dx;
     particle.ay += coef * dy;
 
-    if(particle.id != neighbor.id) {
-        printf("P %lu -> %lu [%f]\n", particle.id, neighbor.id, coef);
-    }
+//    if(particle.id != neighbor.id) {
+//        printf("P %lu -> %lu [%f]\n", particle.id, neighbor.id, coef);
+//    }
 }
 void move(particle_t& p, double size) {
     // Slightly simplified Velocity Verlet integration
@@ -93,14 +93,6 @@ struct bin_t {
             for(int i = 0; i < particle_count; ++i){
                 apply_force(*focus_particle, parts[i]);
             }
-//            for(particle_t* neighbour_particle : particles){
-//                apply_force(*focus_particle, *neighbour_particle);
-//            }
-//            for(int i = 0; i < neighbours_size; ++i) {
-//                for(particle_t* neighbour_particle : neighbours[i]->particles){
-//                    apply_force(*focus_particle, *neighbour_particle);
-//                }
-//            }
         }
     }
 
@@ -245,22 +237,19 @@ void init_focuses(int rank, int num_procs) {
         bin_t* focus_bin = get_bin(focus_ids[i], true);
         int neighbours_size = (int) neighbour_ids[i].size();
         focus_bin->set_neighbours_size(neighbours_size);
-        if(bin_data.count(focus_bin->id) <= 0) {
-            bin_data.emplace(focus_bin->id, *focus_bin);
-        }
 
-        printf("Fid %d [", focus_bin->id);//TODO: QUA QUA QUA QUA                                                QUA
         for (int j = 0; j < neighbours_size; ++j) {
             bin_t *neighbour_bin = get_bin(neighbour_ids[i].at(j), true);
 
-            printf("%d ", neighbour_bin->id);
             focus_bin->neighbours[j] = neighbour_bin;
 
             if(bin_data.count(neighbour_bin->id) <= 0) {
                 bin_data.emplace(neighbour_bin->id, *neighbour_bin);
             }
         }
-        printf("]\n");
+        if(bin_data.count(focus_bin->id) <= 0) {
+            bin_data.emplace(focus_bin->id, *focus_bin);
+        }
     }
 }
 
@@ -297,14 +286,6 @@ void init_simulation(particle_t* parts, int num_parts, double size, int rank, in
     calculate_grid_parameters(size, num_procs);
     init_focuses(rank, num_procs);
     binning(parts, num_parts);
-
-    for(int i = 0; i < focus_count; ++i)  {
-        printf("F %d [", i);
-        for(int j = 0; i < get_focus(i)->neighbours_size; ++i) {
-            printf("%d ", get_focus(i)->neighbours[j]->id);
-        }
-        printf("] \n");
-    }
 }
 
 void simulate_focuses(double size, particle_t* parts, int particle_count) {
