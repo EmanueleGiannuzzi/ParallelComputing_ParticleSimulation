@@ -101,7 +101,7 @@ int bin_row_count;
 int bin_per_proc;
 int* focus_ids;
 int focus_count;
-map<int, bin_t> bin_data;
+vector<bin_t> bin_data;
 
 //region Partitioning
 typedef int (*direction_id_func)(int);
@@ -220,7 +220,7 @@ void init_focuses(int rank, int num_procs) {
 
     for (int bin_id = 0; bin_id < bin_count; ++bin_id) {
         bin_t bin(bin_id);
-        bin_data.emplace(bin.id, bin);
+        bin_data.insert(bin_data.begin() + bin.id, bin);
     }
 
     for (int bin_id = 0; bin_id < bin_count; ++bin_id) {
@@ -248,8 +248,8 @@ int get_bin_id(const particle_t& particle) {
 }
 
 void binning(particle_t* parts, int particle_count) {
-    for (auto& kv : bin_data) {
-        kv.second.clear();
+    for (bin_t& bin : bin_data) {
+        bin.clear();
     }
     for(int i = 0; i < particle_count; ++i) {
         particle_t* particle = &parts[i];
