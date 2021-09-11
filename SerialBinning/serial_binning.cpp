@@ -7,6 +7,7 @@ using namespace std;
 
 //region Phisics
 void apply_force(particle_t& particle, particle_t& neighbor) {
+//    printf("P %lu -> %lu\n", particle.id, neighbor.id);
     // Calculate Distance
     double dx = neighbor.x - particle.x;
     double dy = neighbor.y - particle.y;
@@ -54,23 +55,10 @@ void move(particle_t& p, double size) {
 struct bin_t {
     int id;
     vector<particle_t*> particles;
+    vector<bin_t*> neighbours;
 
-    bin_t** neighbours;
-    int neighbours_size;
-
-    bin_t() {}
-
-    bin_t(int _id){
-        init(_id);
-    }
-
-    void init(int _id) {
+    explicit bin_t(int _id){
         id = _id;
-    }
-
-    void set_neighbours_size(int _neighbours_size) {
-        neighbours_size = _neighbours_size;
-        neighbours = new bin_t*[_neighbours_size];
     }
 
     void add_particle(particle_t* particle) {
@@ -85,13 +73,17 @@ struct bin_t {
         return particles.size();
     }
 
-
-    void apply_forces(particle_t* parts, int particle_count) {
+    void apply_forces() {
         for(particle_t* focus_particle : particles){
             focus_particle->ax = 0;
             focus_particle->ay = 0;
-            for(int i = 0; i < particle_count; ++i){
-                apply_force(*focus_particle, parts[i]);
+            for(particle_t* neighbour_particle : particles){
+                apply_force(*focus_particle, *neighbour_particle);
+            }
+            for(int i = 0; i < neighbours.size(); ++i) {
+                for(particle_t* neighbour_particle : neighbours[i]->particles){
+                    apply_force(*focus_particle, *neighbour_particle);
+                }
             }
         }
     }
@@ -204,62 +196,47 @@ int* get_focus_ids(int rank, int num_procs) {
     return local_b_ids;
 }
 
-vector<int>& get_bin_neighbours_ids(int focus_bin_id) {
+vector<int>* get_bin_neighbours_ids(int focus_bin_id) {
     vector<int>* neighbours = new vector<int>();
     for(int i = 0; i<directions.size(); ++i) {
         if(directions_check[i](focus_bin_id)){
             neighbours->push_back(directions[i](focus_bin_id));
         }
     }
-    return *neighbours;
+    return neighbours;
 }
 
-bin_t* get_bin(int id, bool create_new) {
-    try {
-        return &bin_data.at(id);
-    }
-    catch(const std::out_of_range&){
-        if (create_new) {
-            return new bin_t(id);
-        }
-        return nullptr;
-    }
-
-//    if(bin_data.count(id) > 0) {
-//        return &bin_data.at(id);
-//    }
-//    else if (create_new) {
-//        return new bin_t(id);
-//    }
-//    return nullptr;
+bin_t* get_bin(int id) {
+    return &bin_data.at(id);
 }
 
 void init_focuses(int rank, int num_procs) {
     focus_ids = get_focus_ids(rank, num_procs);
-    vector<int> neighbour_ids[focus_count];
+    vector<int>* neighbour_ids[bin_count];
 
-    for (int i = 0; i < focus_count; ++i) {
-        int focus_id = focus_ids[i];
-        neighbour_ids[i] = get_bin_neighbours_ids(focus_id);
+    for (int bin_id = 0; bin_id < bin_count; ++bin_id) {
+        neighbour_ids[bin_id] = get_bin_neighbours_ids(bin_id);
     }
 
-    for (int i = 0; i < focus_count; ++i) {
-        bin_t* focus_bin = get_bin(focus_ids[i], true);
-        int neighbours_size = (int) neighbour_ids[i].size();
-        focus_bin->set_neighbours_size(neighbours_size);
+    for (int bin_id = 0; bin_id < bin_count; ++bin_id) {
+        bin_t bin(bin_id);
+        bin_data.emplace(bin.id, bin);
+    }
+
+    for (int bin_id = 0; bin_id < bin_count; ++bin_id) {
+        bin_t* bin = get_bin(bin_id);
+
+        int neighbours_size = (int) neighbour_ids[bin_id]->size();
 
         for (int j = 0; j < neighbours_size; ++j) {
-            bin_t *neighbour_bin = get_bin(neighbour_ids[i].at(j), true);
+            bin_t *neighbour_bin = get_bin(neighbour_ids[bin_id]->at(j));
 
-            focus_bin->neighbours[j] = neighbour_bin;
+            bin->neighbours.push_back(neighbour_bin);
+        }
+    }
 
-            if(bin_data.count(neighbour_bin->id) <= 0) {
-                bin_data.emplace(neighbour_bin->id, *neighbour_bin);
-            }
-        }
-        if(bin_data.count(focus_bin->id) <= 0) {
-            bin_data.emplace(focus_bin->id, *focus_bin);
-        }
+    for (int bin_id = 0; bin_id < bin_count; ++bin_id) {
+        delete neighbour_ids[bin_id];
     }
 }
 
@@ -277,7 +254,7 @@ void binning(particle_t* parts, int particle_count) {
     for(int i = 0; i < particle_count; ++i) {
         particle_t* particle = &parts[i];
         int particle_bin_id = get_bin_id(*particle);
-        bin_t* particle_bin = get_bin(particle_bin_id, false);
+        bin_t* particle_bin = get_bin(particle_bin_id);
         if(particle_bin != nullptr) {
             particle_bin->add_particle(particle);
         }
@@ -289,7 +266,17 @@ void binning(particle_t* parts, int particle_count) {
 }
 
 bin_t* get_focus(int focus_id) {
-    return get_bin(focus_ids[focus_id], false);
+    return get_bin(focus_ids[focus_id]);
+}
+
+void simulate_focuses(double size) {
+    for(int i = 0; i < focus_count; ++i)  {
+        get_focus(i)->apply_forces();
+    }
+
+    for(int i = 0; i < focus_count; ++i)  {
+        get_focus(i)->move_particles(size);
+    }
 }
 
 void init_simulation(particle_t* parts, int num_parts, double size, int rank, int num_procs) {
@@ -298,18 +285,7 @@ void init_simulation(particle_t* parts, int num_parts, double size, int rank, in
     binning(parts, num_parts);
 }
 
-void simulate_focuses(double size, particle_t* parts, int particle_count) {
-    for(int i = 0; i < focus_count; ++i)  {
-        get_focus(i)->apply_forces(parts, particle_count);
-    }
-
-    for(int i = 0; i < focus_count; ++i)  {
-        get_focus(i)->move_particles(size);
-    }
-}
-
-
 void simulate_one_step(particle_t* parts, int num_parts, double size) {
-    simulate_focuses(size, parts, num_parts);
+    simulate_focuses(size);
     binning(parts, num_parts);
 }
