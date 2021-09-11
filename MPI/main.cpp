@@ -163,6 +163,7 @@ int main(int argc, char** argv) {
     init_simulation(parts, num_parts, size, rank, num_procs);
 
     for (int step = 0; step < nsteps; ++step) {
+        printf("STEP %d\n", step);
         simulate_one_step(parts, num_parts, size, rank, num_procs);
 
         // Save state if necessary

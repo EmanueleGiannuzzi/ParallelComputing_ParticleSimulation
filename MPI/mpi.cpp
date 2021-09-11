@@ -1,154 +1,16 @@
 #include "common.h"
 #include <mpi.h>
-#include <math.h>
+#include <cmath>
 #include <vector>
-#include <map>
-#include <iostream>
 
 using namespace std;
 
-struct bin_t {
-    int id;
-    vector<particle_t*> particles;
-
-    bin_t() {}
-
-    bin_t(int _id){
-        init(_id);
-    }
-
-    void init(int _id) {
-        id = _id;
-    }
-
-    void add_particle(particle_t* particle) {
-        particles.push_back(particle);
-    }
-
-    void clear() {
-        particles.clear();
-    }
-
-    unsigned long size() const{
-        return particles.size();
-    }
-};
-
-//Remember to delete the buffer, please
-particle_t* serialize_bin_data(const bin_t* bin) {
-    unsigned long buffer_size = bin->size();
-
-    particle_t* buffer = (particle_t*)malloc(buffer_size * sizeof(particle_t));
-    for(int i = 0; i < buffer_size; ++i) {
-        memcpy(&buffer[i], bin->particles[i], sizeof(particle_t));
-    }
-    return buffer;
-}
-
-void deserialize_bin_data(particle_t buffer[], int size, particle_t* parts, int parts_size) {
-    const particle_t* pointer = buffer;
-    for(int i = 0; i < size; ++i) {
-        particle_t particle;
-        memcpy(&particle, pointer, sizeof(particle_t));
-        pointer += sizeof(particle_t);
-        for(int j = 0; j < parts_size; ++j) {//TODO: Maybe use a map?
-            if(parts[j].id == particle.id) {
-                memcpy(&parts[j], &particle, sizeof(particle_t));
-                break;
-            }
-        }
-    }
-}
-
-map<int, bin_t*> bin_data;
-
-bin_t* get_bin(int id, bool create_new = true) {
-    if(bin_data.count(id) > 0) {
-        return bin_data[id];
-    }
-    else if (create_new){
-        bin_t* bin_ptr = new bin_t(id);
-        bin_data.emplace(id, bin_ptr);
-        return bin_ptr;
-    }
-    return nullptr;
-}
-
-// Put any static global variables here that you will use throughout the simulation.
-
-int num_procs;
-int my_rank;
-double bin_size;
-int bin_count;
-int bin_row_count;
-int bin_per_proc;
-int focus_count;
-
-int* focus_ids;
-vector<int>* neighbour_ids;
-
-
-typedef int (*direction_id_func)(int);
-vector<direction_id_func> directions({
-      [](int bin_id) {//0 - TOP
-          return bin_id - bin_row_count;
-      },
-      [](int bin_id) {//1 - BOTTOM
-          return bin_id + bin_row_count;
-      },
-      [](int bin_id) {//2 - LEFT
-          return bin_id - 1;
-      },
-      [](int bin_id) {//3 - RIGHT
-          return bin_id + 1;
-      },
-      [](int bin_id) {//4 - TOPLEFT
-          return bin_id - bin_row_count - 1;
-      },
-      [](int bin_id) {//5 - TOPRIGHT
-          return bin_id - bin_row_count + 1;
-      },
-      [](int bin_id) {//6 - BOTTOMLEFT
-          return bin_id + bin_row_count - 1;
-      },
-      [](int bin_id) {//7 - BOTTOMRIGHT
-          return bin_id + bin_row_count + 1;
-      }
-});
-typedef bool (*direction_check_func)(int);
-vector<direction_check_func> directions_check({
-     [](int bin_id) {//0 - TOP
-         return bin_id - bin_row_count > -1;
-     },
-     [](int bin_id) {//1 - BOTTOM
-         return bin_id + bin_row_count < bin_count;
-     },
-     [](int bin_id) {//2 - LEFT
-         return bin_id % bin_row_count != 0;
-     },
-     [](int bin_id) {//3 - RIGHT
-         return bin_id % bin_row_count != bin_row_count - 1;
-     },
-     [](int bin_id) {//4 - TOPLEFT
-         return (bin_id - bin_row_count > -1) && (bin_id % bin_row_count != 0);//TOP && LEFT
-     },
-     [](int bin_id) {//5 - TOPRIGHT
-         return (bin_id - bin_row_count > -1) && (bin_id % bin_row_count != bin_row_count - 1);//TOP && RIGHT
-     },
-     [](int bin_id) {//6 - BOTTOMLEFT
-         return (bin_id + bin_row_count < bin_count) && (bin_id % bin_row_count != 0);//BOTTOM && LEFT
-     },
-     [](int bin_id) {//7 - BOTTOMRIGHT
-         return (bin_id + bin_row_count < bin_count) && (bin_id % bin_row_count != bin_row_count - 1);//BOTTOM && RIGHT
-     }
-});
-
+//region Phisics
 void apply_force(particle_t& particle, particle_t& neighbor) {
     // Calculate Distance
     double dx = neighbor.x - particle.x;
     double dy = neighbor.y - particle.y;
     double r2 = dx * dx + dy * dy;
-
 
     // Check if the two particles should interact
     if (r2 > cutoff * cutoff)
@@ -161,9 +23,11 @@ void apply_force(particle_t& particle, particle_t& neighbor) {
     double coef = (1 - cutoff / r) / r2 / mass;
     particle.ax += coef * dx;
     particle.ay += coef * dy;
-}
 
-// Integrate the ODE
+//    if(particle.id != neighbor.id) {
+//        printf("P %lu -> %lu [%f]\n", particle.id, neighbor.id, coef);
+//    }
+}
 void move(particle_t& p, double size) {
     // Slightly simplified Velocity Verlet integration
     // Conserves energy better than explicit Euler method
@@ -182,81 +46,144 @@ void move(particle_t& p, double size) {
         p.y = p.y < 0 ? -p.y : 2 * size - p.y;
         p.vy = -p.vy;
     }
-}
 
-struct focus {
-    bin_t* focus_bin;
+//    printf("Particle %lu %f %f %f %f %f %f\n", p.id, p.x, p.y, p.vx, p.vy, p.ax, p.ay);
+}
+//endregion
+
+struct bin_t {
+    int id;
+    vector<particle_t*> particles;
+
     bin_t** neighbours;
     int neighbours_size;
 
-    focus(bin_t* _focus, int _neighbours_size) {
-        init(_focus, neighbours_size);
+    bin_t() {}
+
+    bin_t(int _id){
+        init(_id);
     }
 
-    focus(){}
+    void init(int _id) {
+        id = _id;
+    }
 
-    void init(bin_t* _focus, int _neighbours_size) {
-        focus_bin = _focus;
+    void set_neighbours_size(int _neighbours_size) {
         neighbours_size = _neighbours_size;
         neighbours = new bin_t*[_neighbours_size];
     }
 
-     int id() const{
-        return focus_bin->id;
+    void add_particle(particle_t* particle) {
+        particles.push_back(particle);
     }
 
-    void apply_forces() {
-        for(particle_t* focus_particle : focus_bin->particles){
+    void clear() {
+        particles.clear();
+    }
+
+    unsigned long size() const{
+        return particles.size();
+    }
+
+
+    void apply_forces(particle_t* parts, int particle_count) {
+        for(particle_t* focus_particle : particles){
             focus_particle->ax = 0;
             focus_particle->ay = 0;
-
-            for(int i = 0; i < neighbours_size; ++i) {
-                bin_t* neighbour_bin = neighbours[i];
-
-                for(particle_t* neighbour_particle : neighbour_bin->particles){
-                    apply_force(*focus_particle, *neighbour_particle);
-                }
+            for(int i = 0; i < particle_count; ++i){
+                apply_force(*focus_particle, parts[i]);
             }
         }
     }
 
     void move_particles(double size) {
-        if(focus_bin->particles.empty()) {
-            return;
-        }
-        for(particle_t* focus_particle : focus_bin->particles){
+        for(particle_t* focus_particle : particles) {
             move(*focus_particle, size);
         }
     }
 };
 
-int inline get_bin_id(const particle_t& particle) {
-    int x, y;
-    y = (int)(particle.y / bin_size);
-    x = (int)(particle.x / bin_size);
-    return y * bin_row_count + x;
+double bin_size;
+int bin_count;
+int bin_row_count;
+int bin_per_proc;
+int* focus_ids;
+int focus_count;
+map<int, bin_t> bin_data;
+
+//region Partitioning
+typedef int (*direction_id_func)(int);
+vector<direction_id_func> directions({
+                                             [](int bin_id) {//0 - TOP
+                                                 return bin_id - bin_row_count;
+                                             },
+                                             [](int bin_id) {//1 - BOTTOM
+                                                 return bin_id + bin_row_count;
+                                             },
+                                             [](int bin_id) {//2 - LEFT
+                                                 return bin_id - 1;
+                                             },
+                                             [](int bin_id) {//3 - RIGHT
+                                                 return bin_id + 1;
+                                             },
+                                             [](int bin_id) {//4 - TOPLEFT
+                                                 return bin_id - bin_row_count - 1;
+                                             },
+                                             [](int bin_id) {//5 - TOPRIGHT
+                                                 return bin_id - bin_row_count + 1;
+                                             },
+                                             [](int bin_id) {//6 - BOTTOMLEFT
+                                                 return bin_id + bin_row_count - 1;
+                                             },
+                                             [](int bin_id) {//7 - BOTTOMRIGHT
+                                                 return bin_id + bin_row_count + 1;
+                                             }
+                                     });
+typedef bool (*direction_check_func)(int);
+vector<direction_check_func> directions_check({
+                                                      [](int bin_id) {//0 - TOP
+                                                          return bin_id - bin_row_count > -1;
+                                                      },
+                                                      [](int bin_id) {//1 - BOTTOM
+                                                          return bin_id + bin_row_count < bin_count;
+                                                      },
+                                                      [](int bin_id) {//2 - LEFT
+                                                          return bin_id % bin_row_count != 0;
+                                                      },
+                                                      [](int bin_id) {//3 - RIGHT
+                                                          return bin_id % bin_row_count != bin_row_count - 1;
+                                                      },
+                                                      [](int bin_id) {//4 - TOPLEFT
+                                                          return (bin_id - bin_row_count > -1) && (bin_id % bin_row_count != 0);//TOP && LEFT
+                                                      },
+                                                      [](int bin_id) {//5 - TOPRIGHT
+                                                          return (bin_id - bin_row_count > -1) && (bin_id % bin_row_count != bin_row_count - 1);//TOP && RIGHT
+                                                      },
+                                                      [](int bin_id) {//6 - BOTTOMLEFT
+                                                          return (bin_id + bin_row_count < bin_count) && (bin_id % bin_row_count != 0);//BOTTOM && LEFT
+                                                      },
+                                                      [](int bin_id) {//7 - BOTTOMRIGHT
+                                                          return (bin_id + bin_row_count < bin_count) && (bin_id % bin_row_count != bin_row_count - 1);//BOTTOM && RIGHT
+                                                      }
+                                              });
+//endregion
+
+void calculate_grid_parameters(double size, int num_procs) {
+    bin_row_count = (int)floor(size / cutoff);
+    bin_size = size / bin_row_count;
+
+    printf("SIZE %f - BIN SIZE %f - CUTOFF %f - BIN_ROW_COUNT %d\n", size, bin_size, cutoff, bin_row_count);
+    bin_count = bin_row_count * bin_row_count;
+
+    if(bin_count > num_procs) {
+        bin_per_proc = (int)(bin_count / num_procs);
+    }
+    else {
+        bin_per_proc = 1;
+    }
 }
 
-struct local_bins {
-    focus* focuses;
-
-    static int size() {
-        return focus_count;
-    }
-} bins;
-
-int normal_to_alternate_sqmatrix_id(int id, int size) {
-    bool leftToRight = ((int)(id / size)) % 2 == 0;
-
-    if(leftToRight) {
-        return id;
-    }
-    else{
-        return (size - 1 - (id % size)) + (floor(id / size) * size);
-    }
-}
-
-int* get_focus_ids(int rank) {
+int* get_focus_ids(int rank, int num_procs) {
     focus_count = bin_per_proc;
     int extra_count = bin_count % num_procs;
     bool extra = extra_count != 0;
@@ -270,34 +197,14 @@ int* get_focus_ids(int rank) {
 
     int start = rank * bin_per_proc + (rank == 0 ? 0 : (extra ? extra_count : 0));
     for(int i = 0 ; i < focus_count ; i++ ) {
-        int alternate_id = normal_to_alternate_sqmatrix_id(start + i, bin_row_count);
+        int alternate_id = start + i;//TODO: normal_to_alternate_sqmatrix_id https://github.com/EmanueleGiannuzzi/ParallelComputing_ParticleSimulation/blob/98b553815fb5b516d3e0519c6e21bf0bb3f1623d/MPI/mpi.cpp#L248
+        //int alternate_id = normal_to_alternate_sqmatrix_id(start + i, bin_row_count);
         local_b_ids[i] = alternate_id;
     }
-
     return local_b_ids;
 }
 
-int get_rank_from_bin_id(int bin_id) {
-    bin_id = normal_to_alternate_sqmatrix_id(bin_id, bin_row_count);
-
-    int extra_count = bin_count % num_procs;
-    bool extra = extra_count != 0;
-    if(extra) {
-        int rank0_bin_count = bin_per_proc + extra_count;
-        if(bin_id < rank0_bin_count) {
-            return 0;
-        }
-        else {
-            return ((bin_id - rank0_bin_count ) / bin_per_proc) + 1;
-        }
-    }
-    else {
-        return (int)(bin_id / bin_per_proc);
-    }
-
-}
-
-vector<int>& get_bin_neightbors_id(int focus_bin_id) {
+vector<int>& get_bin_neighbours_ids(int focus_bin_id) {
     vector<int>* neighbours = new vector<int>();
     for(int i = 0; i<directions.size(); ++i) {
         if(directions_check[i](focus_bin_id)){
@@ -307,261 +214,96 @@ vector<int>& get_bin_neightbors_id(int focus_bin_id) {
     return *neighbours;
 }
 
-void binning(particle_t* parts, int particle_count) {
-//    printf("BANANA %d\n", particle_count);
-    for (const auto& kv : bin_data) {
-        kv.second->clear();
+bin_t* get_bin(int id, bool create_new) {
+    if(bin_data.count(id) > 0) {
+        return &bin_data[id];
+    }
+    else if (create_new) {
+        return new bin_t(id);
+    }
+    return nullptr;
+}
+
+void init_focuses(int rank, int num_procs) {
+    focus_ids = get_focus_ids(rank, num_procs);
+    vector<int> neighbour_ids[focus_count];
+
+    for (int i = 0; i < focus_count; ++i) {
+        int focus_id = focus_ids[i];
+        neighbour_ids[i] = get_bin_neighbours_ids(focus_id);
     }
 
+    for (int i = 0; i < focus_count; ++i) {
+        bin_t* focus_bin = get_bin(focus_ids[i], true);
+        int neighbours_size = (int) neighbour_ids[i].size();
+        focus_bin->set_neighbours_size(neighbours_size);
+
+        for (int j = 0; j < neighbours_size; ++j) {
+            bin_t *neighbour_bin = get_bin(neighbour_ids[i].at(j), true);
+
+            focus_bin->neighbours[j] = neighbour_bin;
+
+            if(bin_data.count(neighbour_bin->id) <= 0) {
+                bin_data.emplace(neighbour_bin->id, *neighbour_bin);
+            }
+        }
+        if(bin_data.count(focus_bin->id) <= 0) {
+            bin_data.emplace(focus_bin->id, *focus_bin);
+        }
+    }
+}
+
+int get_bin_id(const particle_t& particle) {
+    int x, y;
+    y = (int)(particle.y / bin_size);
+    x = (int)(particle.x / bin_size);
+    return y * bin_row_count + x;
+}
+
+void binning(particle_t* parts, int particle_count) {
+    for (auto& kv : bin_data) {
+        kv.second.clear();
+    }
     for(int i = 0; i < particle_count; ++i) {
         particle_t* particle = &parts[i];
         int particle_bin_id = get_bin_id(*particle);
         bin_t* particle_bin = get_bin(particle_bin_id, false);
         if(particle_bin != nullptr) {
             particle_bin->add_particle(particle);
-//            printf("Added particle to bin %d ---- %d\n", particle_bin_id, particle_bin->size());
+        }
+        else {
+            string errorMessage = string("Particle ") + to_string(particle->id) + " not added to bin " + to_string(particle_bin_id);
+            throw runtime_error(errorMessage);
         }
     }
-
-    int count = 0;
-    for (const auto& kv : bin_data) {
-        auto particles = kv.second->particles;
-        count += particles.size();
-    }
-    printf("BINNING %d\n", count);
 }
 
-void start_send_to_neighbours(const focus* focuses, vector<MPI_Request*>& requests, vector<particle_t*>& send_buffers) {
+bin_t* get_focus(int focus_id) {
+    return get_bin(focus_ids[focus_id], false);
+}
+
+void init_simulation(particle_t* parts, int num_parts, double size, int rank, int num_procs) {
+    calculate_grid_parameters(size, num_procs);
+    init_focuses(rank, num_procs);
+    binning(parts, num_parts);
+}
+
+void simulate_focuses(double size, particle_t* parts, int particle_count) {
     for(int i = 0; i < focus_count; ++i)  {
-        const focus* focus = &focuses[i];
-        particle_t* buffer = serialize_bin_data(focus->focus_bin);
-        unsigned long buffer_size = focus->focus_bin->size();
-
-        MPI_Request* request;
-        for(int dir_id = 0; dir_id < directions.size(); ++dir_id) {
-            if(directions_check[dir_id](focus->focus_bin->id)) {
-                int neighbour_bin_id = directions[dir_id](focus->id());
-                int dest_rank = get_rank_from_bin_id(neighbour_bin_id);
-
-                if(dest_rank != my_rank) {
-                    request = new MPI_Request();
-                    MPI_Isend(buffer, (int)buffer_size, PARTICLE, dest_rank, 0, MPI_COMM_WORLD, request);
-                    printf(">Rank %d sent to %d, %d particles\n", my_rank, dest_rank, (int)buffer_size);
-                    requests.push_back(request);
-                }
-            }
-        }
-        send_buffers.push_back(buffer);
-    }
-}
-
-void wait_and_clear_buffer(vector<MPI_Request*>& requests, vector<particle_t*>& buffers) {
-    if(requests.empty() || buffers.empty()) {
-        return;
-    }
-    MPI_Request arr[requests.size()];
-    for(int i = 0; i < requests.size(); ++i) {
-        arr[i] = *requests[i];
-    }
-
-    MPI_Waitall((int) requests.size(), arr, MPI_STATUSES_IGNORE);
-    for(MPI_Request* request : requests) {
-        delete request;
-    }
-    for(particle_t* buffer : buffers) {
-        free(buffer);
-    }
-}
-
-void clear_requests_ready_only(vector<MPI_Request*>& requests, vector<particle_t*>& buffers) {
-    int index, flag;
-    do {
-        MPI_Testany((int) requests.size(), requests.front(), &index, &flag, MPI_STATUS_IGNORE);
-        if(flag) {
-            free(buffers[index]);
-            buffers.erase(buffers.begin() + index);
-            MPI_Request_free(*(requests.begin() + index));
-            requests.erase(requests.begin() + index);
-
-        }
-    } while (flag);
-}
-
-bool is_my_focus(const focus* focuses, int bin_id) {
-    for(int i = 0; i < focus_count; ++i) {
-        if(focuses[i].id() == bin_id){
-            return true;
-        }
-    }
-    return false;
-}
-
-int get_receive_count(const focus* focuses) {
-    int count = 0;
-    for(int i = 0; i < focus_count; ++i) {
-        const focus *focus = &focuses[i];
-        for(int j = 0; j < focus->neighbours_size; ++j) {
-            int neighbor_id = focus->neighbours[j]->id;
-            if(!is_my_focus(focuses, neighbor_id)) {
-                count++;
-            }
-        }
-    }
-    return count;
-}
-
-
-void start_receive_from_neighbours(const focus* focuses, particle_t* parts, int particle_count) {
-    int receive_count = 0;
-    int max_receive_count = get_receive_count(focuses);
-
-    printf("[myrank:%d] RECEIVE COUNT %d\n", my_rank, max_receive_count);
-    while(receive_count < max_receive_count) {
-        MPI_Status status;
-        MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
-        int buffer_size = 0;
-        MPI_Get_count(&status, PARTICLE, &buffer_size);
-        int source_rank = status.MPI_SOURCE;
-
-//        printf("Rank %d receiving from %d, %d particles\n", my_rank, source_rank, buffer_size);
-        particle_t* buffer = (particle_t*)malloc(buffer_size * sizeof(particle_t));
-        MPI_Recv(buffer, buffer_size, PARTICLE, source_rank, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        deserialize_bin_data(buffer, buffer_size, parts, particle_count);
-        receive_count++;
-    }
-    printf("[myrank:%d] Received: %d\n", my_rank, receive_count);
-}
-
-void init_simulation(particle_t* parts, int particle_count, double size, int rank, int _num_procs) {
-//    printf("RANK %d:\n", rank);
-
-//    for(int i = 0; i < particle_count; ++i) {
-//        parts[i].print();
-//    }
-
-    num_procs = _num_procs;
-    my_rank = rank;
-
-    bin_row_count = (int)floor(size / cutoff);
-    bin_size = size / bin_row_count;
-
-    printf("SIZE %f - BIN SIZE %f - CUTOFF %f - BIN_ROW_COUNT %d\n", size, bin_size, cutoff, bin_row_count);
-    bin_count = bin_row_count * bin_row_count;
-
-    if(bin_count > num_procs) {
-        bin_per_proc = (int)(bin_count / num_procs);
-    }
-    else {
-        bin_per_proc = 1;
-    }
-    focus_ids = get_focus_ids(rank);
-
-    neighbour_ids = new vector<int>[focus_count];
-
-    for(int i = 0; i < focus_count; ++i) {
-        int focus_id = focus_ids[i];
-        neighbour_ids[i] = get_bin_neightbors_id(focus_id);
-    }
-
-    bins.focuses = new focus[focus_count];
-    for(int i = 0; i < focus_count; ++i) {
-        focus* focus = &bins.focuses[i];
-
-        bin_t* focus_bin = get_bin(focus_ids[i]);
-        int neighbours_size = (int)neighbour_ids[i].size();
-        focus->init(focus_bin, neighbours_size);
-
-//        printf("F%d: ", focus->id());
-        for(int j = 0; j < neighbours_size; ++j) {
-            bin_t* neighbour_bin = get_bin(neighbour_ids[i].at(j));
-            focus->neighbours[j] = neighbour_bin;
-//            printf("%d ", neighbour_bin->id);
-        }
-//       printf("\n");
-    }
-
-    binning(parts, particle_count);
-
-//    for (auto const& x : bin_data) {
-//        printf("BIND ID: %d\n", x.first);
-//        for(particle_t* particle : x.second->particles){
-//            printf("%d:(%f,%f) -- ", x.first, particle->x, particle->y);
-//        }
-//    }
-}
-
-
-void simulate_one_step(particle_t* parts, int particle_count, double size, int rank, int num_procs) {
-    printf("-----------RANK %d[focus_count:%d] STEP.\n", rank, focus_count);
-    focus* focuses = bins.focuses;
-    for(int i = 0; i < focus_count; ++i)  {
-        focuses[i].apply_forces();
+        get_focus(i)->apply_forces(parts, particle_count);
     }
 
     for(int i = 0; i < focus_count; ++i)  {
-//        printf("COSE %d\n", rank);
-        focuses[i].move_particles(size);
+        get_focus(i)->move_particles(size);
     }
-      binning(parts, particle_count);
-    return;
-
-    printf("-----------RANK %d Done simulating\n", rank);
-
-    vector<MPI_Request*> send_requests;
-    vector<particle_t*> send_buffers;
-    start_send_to_neighbours(focuses, send_requests, send_buffers);
-//    clear_requests_ready_only(send_requests, send_buffers);
-
-    printf("-----------RANK %d Done sending\n", rank);
-
-    start_receive_from_neighbours(focuses, parts, particle_count);//Blocking
-
-    printf("-----------RANK %d Done receive\n", rank);
-
-//    clear_requests_ready_only(send_requests, send_buffers);
-
-    binning(parts, particle_count);
-
-    wait_and_clear_buffer(send_requests, send_buffers);
-
-    printf("Barrier reached %d\n", rank);
-    MPI_Barrier(MPI_COMM_WORLD);
 }
 
-void gather_for_save(particle_t* parts, int particle_count, double size, int rank, int num_procs) {
-    // Write this function such that at the end of it, the master (rank == 0)
-    // processor has an in-order view of all particles. That is, the array
-    // parts is complete and sorted by particle id.
 
-    if(rank != 0) {
-        vector<particle_t> buffer;
-        const focus* focuses = bins.focuses;
-        for(int i = 0; i < focus_count; ++i)  {
-            const focus* focus = &focuses[i];
-            particle_t* focus_buffer = serialize_bin_data(focus->focus_bin);
-            unsigned long focus_particle_count = focus->focus_bin->size();
+void simulate_one_step(particle_t* parts, int num_parts, double size, int rank, int num_procs) {
+    simulate_focuses(size, parts, num_parts);
+    binning(parts, num_parts);
+}
 
-            for(int j = 0; j < focus_particle_count; ++j) {
-                buffer.push_back(focus_buffer[j]);
-            }
-        }
+void gather_for_save(particle_t* parts, int num_parts, double size, int rank, int num_procs) {
 
-        MPI_Send(&buffer.front(), (int)buffer.size(), PARTICLE, 0, 0, MPI_COMM_WORLD);
-    }
-    else {
-        for(int i = 0; i < num_procs -1; ++i) {
-            particle_t* buffer;
-            MPI_Status status;
-            MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
-            int source_rank = status.MPI_SOURCE;
-            int buffer_size;
-            MPI_Get_count(&status, PARTICLE, &buffer_size);
-            buffer = (particle_t*)malloc(buffer_size * sizeof(particle_t));
-            MPI_Recv(buffer, buffer_size, PARTICLE, source_rank, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-            deserialize_bin_data(buffer, buffer_size, parts, particle_count);
-
-            delete buffer;
-        }
-    }
 }

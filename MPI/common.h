@@ -13,9 +13,11 @@
 #define min_r    (cutoff / 100)
 #define dt       0.0005
 
+typedef uint64_t psize_t;
+
 // Particle Data Structure
 typedef struct particle_t {
-    uint64_t id; // Particle ID
+    psize_t id; // Particle ID
     double x;    // Position X
     double y;    // Position Y
     double vx;   // Velocity X
