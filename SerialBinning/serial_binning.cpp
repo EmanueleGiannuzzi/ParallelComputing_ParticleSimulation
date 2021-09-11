@@ -1,7 +1,7 @@
 #include "common.h"
-#include <mpi.h>
 #include <cmath>
 #include <vector>
+#include <map>
 
 using namespace std;
 
@@ -215,13 +215,23 @@ vector<int>& get_bin_neighbours_ids(int focus_bin_id) {
 }
 
 bin_t* get_bin(int id, bool create_new) {
-    if(bin_data.count(id) > 0) {
-        return &bin_data[id];
+    try {
+        return &bin_data.at(id);
     }
-    else if (create_new) {
-        return new bin_t(id);
+    catch(const std::out_of_range&){
+        if (create_new) {
+            return new bin_t(id);
+        }
+        return nullptr;
     }
-    return nullptr;
+
+//    if(bin_data.count(id) > 0) {
+//        return &bin_data.at(id);
+//    }
+//    else if (create_new) {
+//        return new bin_t(id);
+//    }
+//    return nullptr;
 }
 
 void init_focuses(int rank, int num_procs) {
@@ -302,8 +312,4 @@ void simulate_focuses(double size, particle_t* parts, int particle_count) {
 void simulate_one_step(particle_t* parts, int num_parts, double size) {
     simulate_focuses(size, parts, num_parts);
     binning(parts, num_parts);
-}
-
-void gather_for_save(particle_t* parts, int num_parts, double size, int rank, int num_procs) {
-
 }
