@@ -65,6 +65,8 @@ def check_conditions ( avg_dists ):
     2) The average distances over the whole 1000 steps must be less than 0.025.
     """
 
+    print("np.mean( avg_dists[:50] = " + str(np.mean( avg_dists[:50] )))
+    print("np.mean( avg_dists ) = " + str(np.mean( avg_dists )))
     assert( np.mean( avg_dists[:50] ) < 3e-7 )
     assert( np.mean( avg_dists ) < 0.025 )
 
