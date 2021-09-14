@@ -56,6 +56,10 @@ void init_particles(particle_t* parts, int num_parts, double size, int part_seed
         parts[i].vx = rand_real(gen);
         parts[i].vy = rand_real(gen);
     }
+
+    for (int i = 0; i < num_parts; ++i) {
+        parts[i].id = i + 1;
+    }
 }
 
 // Command Line Option Processing
@@ -119,13 +123,14 @@ int main(int argc, char** argv) {
     // Algorithm
     auto start_time = std::chrono::steady_clock::now();
 
-    init_simulation(parts, num_parts, size);
+    init_simulation(parts, num_parts, size, 0, 1);
 
 #ifdef _OPENMP
 #pragma omp parallel default(shared)
 #endif
     {
         for (int step = 0; step < nsteps; ++step) {
+            //printf("STEP %d\n", step);
             simulate_one_step(parts, num_parts, size);
 
             // Save state if necessary

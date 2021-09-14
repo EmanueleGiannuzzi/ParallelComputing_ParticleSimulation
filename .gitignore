@@ -55,6 +55,8 @@ bin/*
 test/test_runner
 
 
-venv
+venv/*
 cmake-build-wsl_profile/*
-Naive/Naive_out/Naive
+/plot.py
+/heap-profiler/
+/results/
