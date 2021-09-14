@@ -57,6 +57,5 @@ test/test_runner
 
 venv/*
 cmake-build-wsl_profile/*
-/plot.py
 /heap-profiler/
 /results/
