@@ -1,5 +1,5 @@
-#ifndef __CS267_COMMON_H__
-#define __CS267_COMMON_H__
+#ifndef MPI_COMMON_H
+#define MPI_COMMON_H
 
 #include <cstdint>
 #include <mpi.h>
