@@ -196,11 +196,11 @@ int* get_focus_ids(int rank, int num_procs) {
     return local_b_ids;
 }
 
-vector<int>* get_bin_neighbours_ids(int focus_bin_id) {
-    vector<int>* neighbours = new vector<int>();
+vector<int> get_bin_neighbours_ids(int focus_bin_id) {
+    vector<int> neighbours;
     for(int i = 0; i<directions.size(); ++i) {
         if(directions_check[i](focus_bin_id)){
-            neighbours->push_back(directions[i](focus_bin_id));
+            neighbours.push_back(directions[i](focus_bin_id));
         }
     }
     return neighbours;
@@ -212,12 +212,6 @@ bin_t* get_bin(int id) {
 
 void init_focuses(int rank, int num_procs) {
     focus_ids = get_focus_ids(rank, num_procs);
-    vector<int>* neighbour_ids[bin_count];
-
-    for (int bin_id = 0; bin_id < bin_count; ++bin_id) {
-        neighbour_ids[bin_id] = get_bin_neighbours_ids(bin_id);
-    }
-
     for (int bin_id = 0; bin_id < bin_count; ++bin_id) {
         bin_t bin(bin_id);
         bin_data.insert(bin_data.begin() + bin.id, bin);
@@ -225,18 +219,15 @@ void init_focuses(int rank, int num_procs) {
 
     for (int bin_id = 0; bin_id < bin_count; ++bin_id) {
         bin_t* bin = get_bin(bin_id);
+        vector<int> neighbour_ids = get_bin_neighbours_ids(bin_id);
 
-        int neighbours_size = (int) neighbour_ids[bin_id]->size();
+        int neighbours_size = (int) neighbour_ids.size();
 
         for (int j = 0; j < neighbours_size; ++j) {
-            bin_t *neighbour_bin = get_bin(neighbour_ids[bin_id]->at(j));
+            bin_t *neighbour_bin = get_bin(neighbour_ids.at(j));
 
             bin->neighbours.push_back(neighbour_bin);
         }
-    }
-
-    for (int bin_id = 0; bin_id < bin_count; ++bin_id) {
-        delete neighbour_ids[bin_id];
     }
 }
 

@@ -195,11 +195,11 @@ int* get_focus_ids(int rank, int num_procs) {
     return local_b_ids;
 }
 
-vector<int>* get_bin_neighbours_ids(int focus_bin_id) {
-    vector<int>* neighbours = new vector<int>();
+vector<int> get_bin_neighbours_ids(int focus_bin_id) {
+    vector<int> neighbours;
     for(int i = 0; i<directions.size(); ++i) {
         if(directions_check[i](focus_bin_id)){
-            neighbours->push_back(directions[i](focus_bin_id));
+            neighbours.push_back(directions[i](focus_bin_id));
         }
     }
     return neighbours;
@@ -211,12 +211,6 @@ bin_t* get_bin(int id) {
 
 void init_focuses(int rank, int num_procs) {
     focus_ids = get_focus_ids(rank, num_procs);
-    vector<int>* neighbour_ids[bin_count];
-
-    for (int bin_id = 0; bin_id < bin_count; ++bin_id) {
-        neighbour_ids[bin_id] = get_bin_neighbours_ids(bin_id);
-    }
-
     for (int bin_id = 0; bin_id < bin_count; ++bin_id) {
         bin_t bin(bin_id);
         bin_data.insert(bin_data.begin() + bin.id, bin);
@@ -224,18 +218,15 @@ void init_focuses(int rank, int num_procs) {
 
     for (int bin_id = 0; bin_id < bin_count; ++bin_id) {
         bin_t* bin = get_bin(bin_id);
+        vector<int> neighbour_ids = get_bin_neighbours_ids(bin_id);
 
-        int neighbours_size = (int) neighbour_ids[bin_id]->size();
+        int neighbours_size = (int) neighbour_ids.size();
 
         for (int j = 0; j < neighbours_size; ++j) {
-            bin_t *neighbour_bin = get_bin(neighbour_ids[bin_id]->at(j));
+            bin_t *neighbour_bin = get_bin(neighbour_ids.at(j));
 
             bin->neighbours.push_back(neighbour_bin);
         }
-    }
-
-    for (int bin_id = 0; bin_id < bin_count; ++bin_id) {
-        delete neighbour_ids[bin_id];
     }
 }
 
@@ -395,10 +386,11 @@ int get_receive_count() {
 
 void receive_from_neighbours(particle_t* parts, int particle_count, int my_rank) {
     static int max_receive_count = get_receive_count();//TODO: Static?
-//    printf("[myrank:%d] RECEIVE COUNT %d\n", my_rank, max_receive_count);
+    printf("[myrank:%d] RECEIVE COUNT %d\n", my_rank, max_receive_count);
 
     int receive_count = 0;
     while(receive_count < max_receive_count) {
+        printf("rank%d - %d\n", my_rank, receive_count);
         MPI_Status status;
         MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
         int buffer_size = 0;
@@ -428,10 +420,11 @@ void simulate_focuses(double size) {
 void init_simulation(particle_t* parts, int num_parts, double size, int rank, int num_procs) {
     calculate_grid_parameters(size, num_procs);
     init_focuses(rank, num_procs);
-    binning(parts, num_parts);
+//    binning(parts, num_parts);
 }
 
 void simulate_one_step(particle_t* parts, int num_parts, double size, int rank, int num_procs) {
+    binning(parts, num_parts);
     simulate_focuses(size);
     printf("-----------RANK %d Done simulating\n", rank);
 
@@ -448,7 +441,6 @@ void simulate_one_step(particle_t* parts, int num_parts, double size, int rank, 
 
 //    clear_requests_ready_only(send_requests, send_buffers);
 
-    binning(parts, num_parts);
 
     wait_and_clear_buffer(send_requests, send_buffers);
 
