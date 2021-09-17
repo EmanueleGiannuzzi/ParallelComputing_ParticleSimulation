@@ -13,21 +13,15 @@
 #define min_r    (cutoff / 100)
 #define dt       0.0005
 
-typedef uint64_t psize_t;
-
 // Particle Data Structure
 typedef struct particle_t {
-    psize_t id; // Particle ID
+    uint64_t id; // Particle ID
     double x;    // Position X
     double y;    // Position Y
     double vx;   // Velocity X
     double vy;   // Velocity Y
     double ax;   // Acceleration X
     double ay;   // Acceleration Y
-
-    void print() const {
-        printf("PARTICLE %lu: [%f, %f, %f, %f, %f, %f]\n", id, x, y, vx, vy, ax, ay);
-    }
 } particle_t;
 
 extern MPI_Datatype PARTICLE;
