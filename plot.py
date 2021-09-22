@@ -122,12 +122,13 @@ plt.close("all")
 fig = plt.figure(figsize=(8, 6))
 ax = fig.add_subplot(1, 1, 1)
 title = ax.set_title("OpenMP Speedup", fontsize="x-large")
-ax.set_ylabel(r"$\frac{t(N,1)^*}{t(N,P)}$", fontsize="x-large")
+ax.set_ylabel(r"${S(N,P)=}\frac{t(N,1)^*}{t(N,P)}$", fontsize="x-large")
 ax.set_xlabel('Number of threads (P)', fontsize="x-large")
 openmp_speedup = np.repeat(np.expand_dims(serial, axis=1), repeats=12, axis=1) / np.array(openmp_timings)
 for speedup, number_of_particles in zip(openmp_speedup, number_of_particles_per_simulation):
     ax.plot(number_of_threads, speedup, label=number_of_particles)
-ax.legend(title="Number of particles (N)")
+ax.plot(number_of_threads, [1] * max_number_of_threads, linestyle="dashed", color="grey")
+ax.legend(title="Number of particles (N)", loc=4)
 ax.set_yscale("log")
 ax.yaxis.set_major_formatter(ScalarFormatter())
 plt.xticks(number_of_threads)
@@ -140,12 +141,13 @@ plt.close("all")
 fig = plt.figure(figsize=(8, 6))
 ax = fig.add_subplot(1, 1, 1)
 title = ax.set_title("MPI Speedup", fontsize="x-large")
-ax.set_ylabel(r"$\frac{t(N,1)^*}{t(N,P)}$", fontsize="x-large")
+ax.set_ylabel(r"${S(N,P)=}\frac{t(N,1)^*}{t(N,P)}$", fontsize="x-large")
 ax.set_xlabel('Number of processes (P)', fontsize="x-large")
 mpi_speedup = np.repeat(np.expand_dims(serial, axis=1), repeats=6, axis=1) / np.array(mpi_timings)
 for speedup, number_of_particles in zip(mpi_speedup, number_of_particles_per_simulation):
     ax.plot(number_of_processes, speedup, label=number_of_particles)
-ax.legend(title="Number of particles (N)")
+ax.plot(number_of_processes, [1] * max_number_of_processes, linestyle="dashed", color="grey")
+ax.legend(title="Number of particles (N)", loc=4)
 ax.set_yscale("log")
 ax.yaxis.set_major_formatter(ScalarFormatter())
 plt.xticks(number_of_processes)
@@ -158,7 +160,7 @@ plt.close("all")
 fig = plt.figure(figsize=(8, 6))
 ax = fig.add_subplot(1, 1, 1)
 title = ax.set_title("OpenMP Efficiency", fontsize="x-large")
-ax.set_ylabel(r"$\frac{S(N,P)}{P}$", fontsize="x-large")
+ax.set_ylabel(r"${E(N,P)=}\frac{S(N,P)}{P}$", fontsize="x-large")
 ax.set_xlabel('Number of threads (P)', fontsize="x-large")
 openmp_efficiency = np.array(openmp_speedup) /\
                     np.repeat(np.expand_dims(number_of_threads, axis=0),
@@ -169,6 +171,10 @@ ax.legend(title="Number of particles (N)")
 ax.set_yscale("log")
 ax.yaxis.set_major_formatter(ScalarFormatter())
 plt.xticks(number_of_threads)
+yticks = [1, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2]
+ytickslabels = [str(int(k*100))+"%" for k in yticks]
+ax.set_yticks(ticks=yticks)
+ax.set_yticklabels(ytickslabels)
 plt.tight_layout()
 fig.canvas.draw()
 plt.savefig("results/openmp/openmp_efficiency.png")
@@ -178,7 +184,7 @@ plt.close("all")
 fig = plt.figure(figsize=(8, 6))
 ax = fig.add_subplot(1, 1, 1)
 title = ax.set_title("MPI Efficiency", fontsize="x-large")
-ax.set_ylabel(r"$\frac{S(N,P)}{P}$", fontsize="x-large")
+ax.set_ylabel(r"${E(N,P)=}\frac{S(N,P)}{P}$", fontsize="x-large")
 ax.set_xlabel('Number of processes (P)', fontsize="x-large")
 mpi_efficiency = np.array(mpi_speedup) /\
                  np.repeat(np.expand_dims(number_of_processes, axis=0),
@@ -189,6 +195,8 @@ ax.legend(title="Number of particles (N)")
 ax.set_yscale("log")
 ax.yaxis.set_major_formatter(ScalarFormatter())
 plt.xticks(number_of_processes)
+ax.set_yticks(ticks=yticks)
+ax.set_yticklabels(ytickslabels)
 plt.tight_layout()
 fig.canvas.draw()
 plt.savefig("results/mpi/mpi_efficiency.png")
@@ -230,3 +238,19 @@ plt.xticks(number_of_processes)
 plt.tight_layout()
 fig.canvas.draw()
 plt.savefig("results/mpi/mpi_strong_scaling.png")
+
+# OpenMP Strong Scaling Table
+openmp_strong_scaling_table = np.hstack([np.array(number_of_threads)[:, np.newaxis],
+                                         openmp_timings[-2][:, np.newaxis],
+                                         openmp_speedup[-2][:, np.newaxis],
+                                         openmp_efficiency[-2][:, np.newaxis]])
+np.savetxt("results/openmp_strong_scaling_table.csv", X=np.around(openmp_strong_scaling_table, decimals=2),
+           header="P, t(N=16384;P), S(N=16384;P), E(N=16384;P)", delimiter=",")
+
+# MPI Strong Scaling Table
+mpi_strong_scaling_table = np.hstack([np.array(number_of_processes)[:, np.newaxis],
+                                      mpi_timings[2][:, np.newaxis],
+                                      mpi_speedup[2][:, np.newaxis],
+                                      mpi_efficiency[2][:, np.newaxis]])
+np.savetxt("results/mpi_strong_scaling_table.csv", X=np.around(mpi_strong_scaling_table, decimals=2),
+           header="P, t(N=4096;P), S(N=4096;P), E(N=4096;P)", delimiter=",")

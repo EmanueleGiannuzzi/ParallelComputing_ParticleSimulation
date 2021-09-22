@@ -229,7 +229,7 @@ def make_directory(dir_name: str):
 if __name__ == "__main__":
 
     number_of_simulations: int = 6  # NUMBER_OF_SIMULATIONS
-    initial_power_of_2: int = 9  # INITIAL_POWER_OF_2
+    initial_power_of_2: int = 10  # INITIAL_POWER_OF_2
     np.save("results/initial_power_of_2", initial_power_of_2)
     number_of_particles_per_simulation: List[int] = [2**j for j in range(initial_power_of_2,
                                                                          initial_power_of_2 + number_of_simulations)]
