@@ -1,7 +1,6 @@
 #include "common.h"
-#include <iostream>
+#include <stdio.h>
 #include <cuda.h>
-#include <vector>
 
 #define NUM_THREADS 256
 
@@ -14,63 +13,20 @@ int bin_count;
 int bin_row_count;
 int* bin_map;
 int** bin_neighbours_map;
-int* bin_neighbours_size;
 
 //region Directions
-typedef int (*direction_id_func)(int);
-vector<direction_id_func> directions({
-                                             [](int bin_id) {//0 - TOP
-                                                 return bin_id - bin_row_count;
-                                             },
-                                             [](int bin_id) {//1 - BOTTOM
-                                                 return bin_id + bin_row_count;
-                                             },
-                                             [](int bin_id) {//2 - LEFT
-                                                 return bin_id - 1;
-                                             },
-                                             [](int bin_id) {//3 - RIGHT
-                                                 return bin_id + 1;
-                                             },
-                                             [](int bin_id) {//4 - TOPLEFT
-                                                 return bin_id - bin_row_count - 1;
-                                             },
-                                             [](int bin_id) {//5 - TOPRIGHT
-                                                 return bin_id - bin_row_count + 1;
-                                             },
-                                             [](int bin_id) {//6 - BOTTOMLEFT
-                                                 return bin_id + bin_row_count - 1;
-                                             },
-                                             [](int bin_id) {//7 - BOTTOMRIGHT
-                                                 return bin_id + bin_row_count + 1;
-                                             }
-                                     });
-typedef bool (*direction_check_func)(int);
-vector<direction_check_func> directions_check({
-                                                      [](int bin_id) {//0 - TOP
-                                                          return bin_id - bin_row_count > -1;
-                                                      },
-                                                      [](int bin_id) {//1 - BOTTOM
-                                                          return bin_id + bin_row_count < bin_count;
-                                                      },
-                                                      [](int bin_id) {//2 - LEFT
-                                                          return bin_id % bin_row_count != 0;
-                                                      },
-                                                      [](int bin_id) {//3 - RIGHT
-                                                          return bin_id % bin_row_count != bin_row_count - 1;
-                                                      },
-                                                      [](int bin_id) {//4 - TOPLEFT
-                                                          return (bin_id - bin_row_count > -1) && (bin_id % bin_row_count != 0);//TOP && LEFT
-                                                      },
-                                                      [](int bin_id) {//5 - TOPRIGHT
-                                                          return (bin_id - bin_row_count > -1) && (bin_id % bin_row_count != bin_row_count - 1);//TOP && RIGHT
-                                                      },
-                                                      [](int bin_id) {//6 - BOTTOMLEFT
-                                                          return (bin_id + bin_row_count < bin_count) && (bin_id % bin_row_count != 0);//BOTTOM && LEFT
-                                                      },
-                                                      [](int bin_id) {//7 - BOTTOMRIGHT
-                                                          return (bin_id + bin_row_count < bin_count) && (bin_id % bin_row_count != bin_row_count - 1);//BOTTOM && RIGHT
-                                                      }
-                                              });
+__device__ bool inline has_up(int bin_id, int bins_per_row) {
+    return bin_id - bins_per_row > -1;
+}
+__device__ bool inline has_down(int bin_id, int bins_per_row, int _bin_count) {
+    return bin_id + bins_per_row < _bin_count;
+}
+__device__ bool inline has_left(int bin_id, int bins_per_row) {
+    return bin_id % bins_per_row != 0;
+}
+__device__ bool inline has_right(int bin_id, int bins_per_row) {
+    return bin_id % bins_per_row != bins_per_row - 1;
+}
 //endregion
 
 void calculate_grid_parameters(double size) {
@@ -81,52 +37,59 @@ void calculate_grid_parameters(double size) {
     bin_count = bin_row_count * bin_row_count;
 }
 
-vector<int> get_bin_neighbours_ids(int focus_bin_id) {
-    vector<int> neighbours;
-    for(int i = 0; i<directions.size(); ++i) {
-        if(directions_check[i](focus_bin_id)){
-            neighbours.push_back(directions[i](focus_bin_id));
-        }
+__global__ void init_bin_neighbours(int _bin_count, int** _bin_neighbours_map, int bins_per_row) {
+    int bin_id = threadIdx.x + blockIdx.x * blockDim.x;
+    if (bin_id >= _bin_count)
+        return;
+
+    const int NEIGHBOURS_SIZE = 8;
+
+    cudaMalloc((void**)&_bin_neighbours_map[bin_id], NEIGHBOURS_SIZE * sizeof(int));
+    int count = 0;
+    _bin_neighbours_map[bin_id] = new int[NEIGHBOURS_SIZE];
+    if (has_up(bin_id, bins_per_row)) {
+        _bin_neighbours_map[bin_id][count] = bin_id - bins_per_row;
+        count++;
     }
-    return neighbours;
-}
-
-void init_bin_neighbours() {//TODO: Maybe convert to kernel
-    printf("BANANA0\n");
-    int** h_bin_neighbours_map = new int*[bin_count];
-    bin_neighbours_map = new int*[bin_count];
-    int* h_bin_neighbours_size = new int[bin_count];
-
-    printf("BANANA1\n");
-    for(int bin_id = 0; bin_id < bin_count; ++bin_id) {
-        vector<int> neighbours_host = get_bin_neighbours_ids(bin_id);
-        int size = (int)neighbours_host.size();
-        h_bin_neighbours_size[bin_id] = size;
-        h_bin_neighbours_map[bin_id] = new int[size];
-        bin_neighbours_map[bin_id] = new int[size];
-        memcpy(h_bin_neighbours_map[bin_id], &neighbours_host, size);
+    // up right
+    if (has_up(bin_id, bins_per_row) && has_right(bin_id, bins_per_row)) {
+        _bin_neighbours_map[bin_id][count] = bin_id - bins_per_row + 1;
+        count++;
     }
-    printf("BANANA2\n");
-    cudaMalloc((void**)&bin_neighbours_map, bin_count * sizeof(int*));
-    cudaMalloc((void**)&bin_neighbours_size, bin_count * sizeof(int));
-
-    printf("BANANA3\n");
-    cudaMemcpy(bin_neighbours_size, h_bin_neighbours_size, bin_count *  sizeof(int), cudaMemcpyHostToDevice);
-    cudaMemcpy(bin_neighbours_map, h_bin_neighbours_map, bin_count * sizeof(int*), cudaMemcpyHostToDevice);
-
-    printf("BANANA4\n");
-    for(int bin_id = 0; bin_id < bin_count; ++bin_id) {
-        int size = h_bin_neighbours_size[bin_id];
-        printf("BANANA00 %d\n", bin_id);
-        cudaMalloc((void**)&bin_neighbours_map[bin_id], size * sizeof(int));
-
-        printf("BANANA11 %d\n", bin_id);
-        cudaMemcpy(bin_neighbours_map[bin_id], h_bin_neighbours_map[bin_id], size * sizeof(int), cudaMemcpyHostToDevice);
-
-        printf("BANANA22 %d\n", bin_id);
+    // right
+    if (has_right(bin_id, bins_per_row)) {
+        _bin_neighbours_map[bin_id][count] = bin_id + 1;
+        count++;
     }
-    delete[] bin_neighbours_map;
-    delete bin_neighbours_size;
+    // down right
+    if (has_down(bin_id, bins_per_row, _bin_count) && has_right(bin_id, bins_per_row)) {
+        _bin_neighbours_map[bin_id][count] = bin_id + bins_per_row + 1;
+        count++;
+    }
+    // down
+    if (has_down(bin_id, bins_per_row, _bin_count)) {
+        _bin_neighbours_map[bin_id][count] = bin_id + bins_per_row;
+        count++;
+    }
+    // down left
+    if (has_down(bin_id, bins_per_row, _bin_count) && has_left(bin_id, bins_per_row)) {
+        _bin_neighbours_map[bin_id][count] = bin_id + bins_per_row - 1;
+        count++;
+    }
+    // left
+    if (has_left(bin_id, bins_per_row)) {
+        _bin_neighbours_map[bin_id][count] = bin_id - 1;
+        count++;
+    }
+    // up left
+    if (has_up(bin_id, bins_per_row) && has_left(bin_id, bins_per_row)) {
+        _bin_neighbours_map[bin_id][count] = bin_id - bins_per_row - 1;
+        count++;
+    }
+
+    for(; count < NEIGHBOURS_SIZE; ++count) {
+        _bin_neighbours_map[bin_id][count] = -1;
+    }
 }
 
 __device__ int get_bin_id(const particle_t& particle, double _bin_size, int _bin_row_count) {
@@ -152,18 +115,22 @@ __device__ void apply_force_gpu(particle_t& particle, particle_t& neighbor) {
     double coef = (1 - cutoff / r) / r2 / mass;
     particle.ax += coef * dx;
     particle.ay += coef * dy;
+
 }
 
-__device__ bool find_element(const int* array, int size, int element) {
+__device__ bool find_bin_id(const int* array, int size, int element) {
     for(int i = 0; i < size; ++i) {
         if(array[i] == element) {
             return true;
+        }
+        else if(array[i] < 0) {
+            return false;
         }
     }
     return false;
 }
 
-__global__ void compute_forces_gpu(particle_t* particles, int num_parts, const int* _bin_map, int** _bin_neighbours_map, const int* _bin_neighbours_size) {
+__global__ void compute_forces_gpu(particle_t* particles, int num_parts, const int* _bin_map, int** _bin_neighbours_map) {
     // Get thread (particle) ID
     int tid = threadIdx.x + blockIdx.x * blockDim.x;
     if (tid >= num_parts)
@@ -173,15 +140,17 @@ __global__ void compute_forces_gpu(particle_t* particles, int num_parts, const i
 
     int bin_id = _bin_map[tid];
     const int* neighbours = _bin_neighbours_map[bin_id];
-    int neighbours_size = _bin_neighbours_size[bin_id];
+    const int NEIGHBOURS_SIZE = 8;
 
     for (int neighbour_part_id = 0; neighbour_part_id < num_parts; neighbour_part_id++) {
+
+//        printf("NEIGHBOUR %d\n", neighbour_part_id);
         int neighbour_bin_id = _bin_map[neighbour_part_id];
-        if(find_element(neighbours, neighbours_size, neighbour_bin_id)) {
+//        if(find_bin_id(neighbours, NEIGHBOURS_SIZE, neighbour_bin_id)) {
             apply_force_gpu(particles[tid], particles[neighbour_part_id]);
 
-            printf("BANANA5\n");
-        }
+//            printf("Collision %d -> %d\n", tid, neighbour_part_id);
+//        }
     }
 }
 
@@ -230,9 +199,12 @@ void init_simulation(particle_t* parts, int num_parts, double size) {
     // parts live in GPU memory
     // Do not do any particle simulation here
 
-    printf("COSE\n");
     calculate_grid_parameters(size);
-    init_bin_neighbours();
+
+    cudaMalloc((void**)&bin_neighbours_map, bin_count * sizeof(int*));
+    int bin_blks = (bin_count + NUM_THREADS - 1) / NUM_THREADS;
+    init_bin_neighbours<<<bin_blks, NUM_THREADS>>>(bin_count, bin_neighbours_map, bin_row_count);
+
     blks = (num_parts + NUM_THREADS - 1) / NUM_THREADS;
     cudaMalloc((void**)&bin_map, num_parts * sizeof(int));
     rebin<<<blks, NUM_THREADS>>>(parts, bin_size, bin_row_count, num_parts, bin_map);
@@ -241,7 +213,9 @@ void init_simulation(particle_t* parts, int num_parts, double size) {
 
 void simulate_one_step(particle_t* parts, int num_parts, double size) {
     // Compute forces
-    compute_forces_gpu<<<blks, NUM_THREADS>>>(parts, num_parts, bin_map, bin_neighbours_map, bin_neighbours_size);
+
+    printf("STEP\n");
+    compute_forces_gpu<<<blks, NUM_THREADS>>>(parts, num_parts, bin_map, bin_neighbours_map);
 
     // Move particles
     move_gpu<<<blks, NUM_THREADS>>>(parts, num_parts, size);
