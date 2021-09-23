@@ -6,6 +6,7 @@ cmake_minimum_required(VERSION 3.19)
 
 project(CUDA LANGUAGES CUDA)
 
-add_executable(CUDA main.cu gpu.cu common.h)
+add_executable(CUDA main.cu cuda.cu common.h)
+add_executable(CUDA_Naive main.cu gpu.cu common.h)
 add_executable(OPT main.cu opt.cu common.h)
 

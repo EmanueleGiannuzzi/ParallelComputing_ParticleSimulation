@@ -2,6 +2,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <cuda.h>
 #include <fstream>
 #include <iostream>
 #include <random>
@@ -112,30 +113,31 @@ int main(int argc, char** argv) {
     int part_seed = find_int_arg(argc, argv, "-s", 0);
     double size = sqrt(density * num_parts);
 
-    particle_t* parts;
-    // Allocate Unified Memory – accessible from CPU or GPU
-    cudaMallocManaged(&parts, num_parts*sizeof(particle_t));
+    particle_t* parts = new particle_t[num_parts];
 
-    // Initialize particles array on the host
     init_particles(parts, num_parts, size, part_seed);
+
+    particle_t* parts_gpu;
+    cudaMalloc((void**)&parts_gpu, num_parts * sizeof(particle_t));
+    cudaMemcpy(parts_gpu, parts, num_parts * sizeof(particle_t), cudaMemcpyHostToDevice);
 
     // Algorithm
     auto start_time = std::chrono::steady_clock::now();
 
-    init_simulation(parts, num_parts, size);
-    cudaDeviceSynchronize();
+    init_simulation(parts_gpu, num_parts, size);
 
     for (int step = 0; step < nsteps; ++step) {
-        simulate_one_step(parts, num_parts, size);
-        // Wait for GPU to finish before accessing on host
+        simulate_one_step(parts_gpu, num_parts, size);
         cudaDeviceSynchronize();
 
         // Save state if necessary
         if (fsave.good() && (step % savefreq) == 0) {
+            cudaMemcpy(parts, parts_gpu, num_parts * sizeof(particle_t), cudaMemcpyDeviceToHost);
             save(fsave, parts, num_parts, size);
         }
     }
 
+    cudaDeviceSynchronize();
     auto end_time = std::chrono::steady_clock::now();
 
     std::chrono::duration<double> diff = end_time - start_time;
@@ -144,6 +146,6 @@ int main(int argc, char** argv) {
     // Finalize
     std::cout << "Simulation Time = " << seconds << " seconds for " << num_parts << " particles.\n";
     fsave.close();
-
-    cudaFree(parts);
+    cudaFree(parts_gpu);
+    delete[] parts;
 }

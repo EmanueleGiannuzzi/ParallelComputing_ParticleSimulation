@@ -1,8 +1,10 @@
 #include "common.h"
-#include <cstdio>
+#include <cuda.h>
+#include <stdio.h>
 #define NUM_THREADS 256
 
 // Put any static global variables here that you will use throughout the simulation.
+int blks;
 
 int bins_per_row;
 int bin_count;
@@ -15,16 +17,15 @@ __device__ void apply_force_gpu(particle_t& particle, particle_t& neighbor) {
     double dx = neighbor.x - particle.x;
     double dy = neighbor.y - particle.y;
     double r2 = dx * dx + dy * dy;
-
-    // Check if the two particles should interact
     if (r2 > cutoff * cutoff)
         return;
-
-    r2 = fmax( r2, min_r * min_r );
-    //r2 = (r2 > min_r * min_r) ? r2 : min_r * min_r;
+    // r2 = fmax( r2, min_r*min_r );
+    r2 = (r2 > min_r * min_r) ? r2 : min_r * min_r;
     double r = sqrt(r2);
 
-    // Very simple short-range repulsive force
+    //
+    //  very simple short-range repulsive force
+    //
     double coef = (1 - cutoff / r) / r2 / mass;
     particle.ax += coef * dx;
     particle.ay += coef * dy;
@@ -41,10 +42,10 @@ __device__ void apply_force_gpu(particle_t& particle, particle_t& neighbor) {
    v
 */
 
-__device__ int inline get_bin_id(particle_t& particle, int bins_per_row, double bin_size) {
+__device__ int inline get_bin_id(particle_t& particle, int bins_per_row, int bin_count, double bin_size) {
     int x, y;
-    y = int(particle.y / bin_size);
-    x = int(particle.x / bin_size);
+    y = particle.y / bin_size;
+    x = particle.x / bin_size;
     if (x == bins_per_row) {
         x--;
     }
@@ -55,29 +56,29 @@ __device__ int inline get_bin_id(particle_t& particle, int bins_per_row, double 
 }
 
 
-__global__ void rebin_gpu(particle_t* parts, int num_parts, int bins_per_row, int bin_count, double bin_size, int* heads, int* linked_list) {
+__global__ void rebin(particle_t* particles, int num_parts, int bins_per_row, int bin_count, double bin_size, int* heads, int* linked_list) {
     // Get thread (particle) ID
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
-    if (index < bin_count) {
-        heads[index] = -1;
+    int tid = threadIdx.x + blockIdx.x * blockDim.x;
+    if (tid < bin_count) {
+        heads[tid] = -1;
     }
-    if (index >= num_parts)
+    if (tid >= num_parts)
         return;
-    int bin_id = get_bin_id(parts[index], bins_per_row, bin_size);
-    linked_list[index] = atomicExch(&heads[bin_id], index);
+    int bin_id = get_bin_id(particles[tid], bins_per_row, bin_count, bin_size);
+    linked_list[tid] = atomicExch(&heads[bin_id], tid);
 }
 
-__device__ bool inline has_up(int bin_id, int bin_row_count) {
-    return bin_id - bin_row_count > -1;
+__device__ bool inline has_up(int bin_id, int bins_per_row, int bin_count, double bin_size) {
+    return bin_id - bins_per_row > -1;
 }
-__device__ bool inline has_down(int bin_id, int bin_row_count, int bin_count) {
-    return bin_id + bin_row_count < bin_count;
+__device__ bool inline has_down(int bin_id, int bins_per_row, int bin_count, double bin_size) {
+    return bin_id + bins_per_row < bin_count;
 }
-__device__ bool inline has_left(int bin_id, int bin_row_count) {
-    return bin_id % bin_row_count != 0;
+__device__ bool inline has_left(int bin_id, int bins_per_row, int bin_count, double bin_size) {
+    return bin_id % bins_per_row != 0;
 }
-__device__ bool inline has_right(int bin_id, int bin_row_count) {
-    return bin_id % bin_row_count != bin_row_count - 1;
+__device__ bool inline has_right(int bin_id, int bins_per_row, int bin_count, double bin_size) {
+    return bin_id % bins_per_row != bins_per_row - 1;
 }
 
 __device__ void inline loop(particle_t* parts, int i, int another_bin_id, int* heads, int* linked_list) {
@@ -87,70 +88,70 @@ __device__ void inline loop(particle_t* parts, int i, int another_bin_id, int* h
     }
 }
 
-__global__ void compute_forces_gpu(particle_t* parts, int num_parts, int bins_per_row, int bin_count, double bin_size, int* heads, int* linked_list) {
+__global__ void compute_forces_gpu(particle_t* particles, int num_parts, int bins_per_row, int bin_count, double bin_size, int* heads, int* linked_list) {
     // Get thread (particle) ID
     int tid = threadIdx.x + blockIdx.x * blockDim.x;
     if (tid >= num_parts)
         return;
 
-    parts[tid].ax = parts[tid].ay = 0;
-    int bin_id = get_bin_id(parts[tid], bins_per_row, bin_size);
-
+    particles[tid].ax = particles[tid].ay = 0;
+    int bin_id = get_bin_id(particles[tid], bins_per_row, bin_count, bin_size);
     // self
-    loop(parts, tid, bin_id, heads, linked_list);
-
+    loop(particles, tid, bin_id, heads, linked_list);
     // up
-    if (has_up(bin_id, bins_per_row)) {
-        loop(parts, tid, bin_id - bins_per_row, heads, linked_list);
+    if (has_up(bin_id, bins_per_row, bin_count, bin_size)) {
+        loop(particles, tid, bin_id - bins_per_row, heads, linked_list);
     }
     // up right
-    if (has_up(bin_id, bins_per_row) && has_right(bin_id, bins_per_row)) {
-        loop(parts, tid, bin_id - bins_per_row + 1, heads, linked_list);
+    if (has_up(bin_id, bins_per_row, bin_count, bin_size) && has_right(bin_id, bins_per_row, bin_count, bin_size)) {
+        loop(particles, tid, bin_id - bins_per_row + 1, heads, linked_list);
     }
     // right
-    if (has_right(bin_id, bins_per_row)) {
-        loop(parts, tid, bin_id + 1, heads, linked_list);
+    if (has_right(bin_id, bins_per_row, bin_count, bin_size)) {
+        loop(particles, tid, bin_id + 1, heads, linked_list);
     }
     // down right
-    if (has_down(bin_id, bins_per_row, bin_count) && has_right(bin_id, bins_per_row)) {
-        loop(parts, tid, bin_id + bins_per_row + 1, heads, linked_list);
+    if (has_down(bin_id, bins_per_row, bin_count, bin_size) && has_right(bin_id, bins_per_row, bin_count, bin_size)) {
+        loop(particles, tid, bin_id + bins_per_row + 1, heads, linked_list);
     }
     // down
-    if (has_down(bin_id, bins_per_row, bin_count)) {
-        loop(parts, tid, bin_id + bins_per_row, heads, linked_list);
+    if (has_down(bin_id, bins_per_row, bin_count, bin_size)) {
+        loop(particles, tid, bin_id + bins_per_row, heads, linked_list);
     }
     // down left
-    if (has_down(bin_id, bins_per_row, bin_count) && has_left(bin_id, bins_per_row)) {
-        loop(parts, tid, bin_id + bins_per_row - 1, heads, linked_list);
+    if (has_down(bin_id, bins_per_row, bin_count, bin_size) && has_left(bin_id, bins_per_row, bin_count, bin_size)) {
+        loop(particles, tid, bin_id + bins_per_row - 1, heads, linked_list);
     }
     // left
-    if (has_left(bin_id, bins_per_row)) {
-        loop(parts, tid, bin_id - 1, heads, linked_list);
+    if (has_left(bin_id, bins_per_row, bin_count, bin_size)) {
+        loop(particles, tid, bin_id - 1, heads, linked_list);
     }
     // up left
-    if (has_up(bin_id, bins_per_row) && has_left(bin_id, bins_per_row)) {
-        loop(parts, tid, bin_id - bins_per_row - 1, heads, linked_list);
+    if (has_up(bin_id, bins_per_row, bin_count, bin_size) && has_left(bin_id, bins_per_row, bin_count, bin_size)) {
+        loop(particles, tid, bin_id - bins_per_row - 1, heads, linked_list);
     }
 }
 
-// Integrate the ODE
-__global__ void move_gpu(particle_t* parts, int num_parts, double size) {
+__global__ void move_gpu(particle_t* particles, int num_parts, double size) {
 
     // Get thread (particle) ID
     int tid = threadIdx.x + blockIdx.x * blockDim.x;
     if (tid >= num_parts)
         return;
 
-    particle_t* p = &parts[tid];
-
-    // Slightly simplified Velocity Verlet integration
-    // Conserves energy better than explicit Euler method
+    particle_t* p = &particles[tid];
+    //
+    //  slightly simplified Velocity Verlet integration
+    //  conserves energy better than explicit Euler method
+    //
     p->vx += p->ax * dt;
     p->vy += p->ay * dt;
     p->x += p->vx * dt;
     p->y += p->vy * dt;
 
-    // Bounce from walls
+    //
+    //  bounce from walls
+    //
     while (p->x < 0 || p->x > size) {
         p->x = p->x < 0 ? -(p->x) : 2 * size - p->x;
         p->vx = -(p->vx);
@@ -167,32 +168,24 @@ void init_simulation(particle_t* parts, int num_parts, double size) {
     // parts live in GPU memory
     // Do not do any particle simulation here
 
+    blks = (num_parts + NUM_THREADS - 1) / NUM_THREADS;
     bins_per_row = size / cutoff;
     bin_count = bins_per_row * bins_per_row;
     bin_size = size / bins_per_row;
-
     cudaMalloc((void**)&heads, bin_count * sizeof(int));
     cudaMalloc((void**)&linked_list, num_parts * sizeof(int));
-
-    int blockSize = NUM_THREADS;
-    int numBlocks = (bin_count + blockSize - 1) / blockSize;
-    rebin_gpu<<<numBlocks, blockSize>>>(parts, num_parts, bins_per_row, bin_count, bin_size, heads, linked_list);
 }
 
 void simulate_one_step(particle_t* parts, int num_parts, double size) {
-    int blockSize = NUM_THREADS;
-    int numBlocks;
-    numBlocks = (num_parts + blockSize - 1) / blockSize;
+    // parts live in GPU memory
+    // Rewrite this function
+    int tmp_blks = (bin_count + NUM_THREADS - 1) / NUM_THREADS;
+    rebin<<<tmp_blks, NUM_THREADS>>>(parts, num_parts, bins_per_row, bin_count, bin_size, heads, linked_list);
 
     // Compute forces
-    compute_forces_gpu<<<numBlocks, blockSize>>>(parts, num_parts, bins_per_row, bin_count, bin_size, heads, linked_list);
-    cudaDeviceSynchronize();
+    compute_forces_gpu<<<blks, NUM_THREADS>>>(parts, num_parts, bins_per_row, bin_count, bin_size, heads, linked_list);
 
     // Move particles
-    move_gpu<<<numBlocks, blockSize>>>(parts, num_parts, size);
-    cudaDeviceSynchronize();
+    move_gpu<<<blks, NUM_THREADS>>>(parts, num_parts, size);
 
-    numBlocks= (bin_count + blockSize - 1) / blockSize;
-    rebin_gpu<<<numBlocks, blockSize>>>(parts, num_parts, bins_per_row, bin_count, bin_size, heads, linked_list);
-    cudaDeviceSynchronize();
 }
