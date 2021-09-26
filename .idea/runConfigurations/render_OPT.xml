@@ -1,18 +1,18 @@
 <component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="correctness-check CUDA OPT" type="PythonConfigurationType" factoryName="Python" singleton="false">
+  <configuration default="false" name="render OPT" type="PythonConfigurationType" factoryName="Python" singleton="false">
+    <module name="ParallelComputing_ParticleSimulation" />
     <option name="INTERPRETER_OPTIONS" value="" />
     <option name="PARENT_ENVS" value="true" />
     <envs>
       <env name="PYTHONUNBUFFERED" value="1" />
     </envs>
     <option name="SDK_HOME" value="$PROJECT_DIR$/venv/bin/python" />
-    <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/correctness-check" />
+    <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/rendering" />
     <option name="IS_MODULE_SDK" value="false" />
     <option name="ADD_CONTENT_ROOTS" value="true" />
     <option name="ADD_SOURCE_ROOTS" value="true" />
-    <module name="" />
-    <option name="SCRIPT_NAME" value="$PROJECT_DIR$/correctness-check/correctness-check.py" />
-    <option name="PARAMETERS" value="../CUDA/CUDA_out/opt.parts.out ../Naive/Naive_out/naive.parts.out" />
+    <option name="SCRIPT_NAME" value="$PROJECT_DIR$/rendering/render.py" />
+    <option name="PARAMETERS" value="../CUDA/CUDA_out/opt.parts.out opt_particles.gif 0.01" />
     <option name="SHOW_COMMAND_LINE" value="false" />
     <option name="EMULATE_TERMINAL" value="false" />
     <option name="MODULE_MODE" value="false" />

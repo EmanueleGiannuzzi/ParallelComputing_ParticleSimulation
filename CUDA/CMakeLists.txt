@@ -8,4 +8,5 @@ project(CUDA LANGUAGES CUDA)
 
 add_executable(CUDA main.cu gpu.cu common.h)
 add_executable(OPT main.cu opt.cu common.h)
+add_executable(THRUST thrust.cu thrust_gpu.cu common.h)
 
