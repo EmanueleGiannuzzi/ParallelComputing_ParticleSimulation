@@ -23,6 +23,26 @@ initial_power_of_2 = np.load("results/initial_power_of_2.npy")
 number_of_particles_per_simulation = [2**j for j in range(initial_power_of_2,
                                                           initial_power_of_2 + number_of_simulations)]
 
+# region Timing
+
+# plt.close("all")
+# # Serial timings
+# fig = plt.figure(figsize=(8, 6))
+# ax = fig.add_subplot(1, 1, 1)
+# title = ax.set_title("Naive vs Binned Timings", fontsize="x-large")
+# ax.set_ylabel('Wallclock time (s)', fontsize="x-large")
+# ax.set_xlabel('Number of particles (N)', fontsize="x-large")
+# serial_timings = [naive_timings, serial]
+# for timing, paradigm in zip(serial_timings, ["Naive", "Binned"]):
+#     ax.plot(number_of_particles_per_simulation, timing, label=paradigm)
+# ax.legend()
+# ax.set_yscale("log")
+# ax.yaxis.set_major_formatter(ScalarFormatter())
+# plt.xticks(number_of_particles_per_simulation, rotation=45)
+# plt.tight_layout()
+# fig.canvas.draw()
+# plt.savefig("results/serial_timings.png")
+
 plt.close("all")
 # Overall timings
 fig = plt.figure(figsize=(8, 6))
@@ -50,8 +70,8 @@ ax.set_ylabel("Wallclock time (s)", fontsize="x-large")
 ax.set_xlabel("Number of particles (N)", fontsize="x-large")
 for timing, threads in zip(np.transpose(openmp_timings), number_of_threads):
     ax.plot(number_of_particles_per_simulation, timing, label=threads)
-ax.legend(title="Number of threads (P)", loc=4)
-ax.set_yscale("log")
+ax.legend(title="Number of threads (P)", loc=2)
+# ax.set_yscale("log")
 ax.yaxis.set_major_formatter(ScalarFormatter())
 plt.xticks(number_of_particles_per_simulation, rotation=45)
 plt.tight_layout()
@@ -67,13 +87,48 @@ ax.set_ylabel('Wallclock time (s)', fontsize="x-large")
 ax.set_xlabel('Number of particles (N)', fontsize="x-large")
 for timing, processes in zip(np.transpose(mpi_timings), number_of_processes):
     ax.plot(number_of_particles_per_simulation, timing, label=processes)
-ax.legend(title="Number of processes (P)", loc=4)
-ax.set_yscale("log")
+ax.legend(title="Number of processes (P)", loc=2)
+# ax.set_yscale("log")
 ax.yaxis.set_major_formatter(ScalarFormatter())
 plt.xticks(number_of_particles_per_simulation, rotation=45)
 plt.tight_layout()
 fig.canvas.draw()
 plt.savefig("results/mpi/mpi_timings.png")
+
+plt.close("all")
+# CUDA timings
+fig = plt.figure(figsize=(8, 6))
+ax = fig.add_subplot(1, 1, 1)
+title = ax.set_title("CUDA Timings", fontsize="x-large")
+ax.set_ylabel('Wallclock time (s)', fontsize="x-large")
+ax.set_xlabel('Number of particles (N)', fontsize="x-large")
+ax.plot(number_of_particles_per_simulation, cuda, color="red", linestyle="dashed")
+ax.scatter(number_of_particles_per_simulation, cuda, color="red")
+ax.yaxis.set_major_formatter(ScalarFormatter())
+plt.xticks(number_of_particles_per_simulation, rotation=45)
+plt.tight_layout()
+fig.canvas.draw()
+plt.savefig("results/cuda/cuda_timings.png")
+
+plt.close("all")
+# CUDA vs Serial timings
+fig = plt.figure(figsize=(8, 6))
+ax = fig.add_subplot(1, 1, 1)
+title = ax.set_title("CUDA vs Serial Timings", fontsize="x-large")
+ax.set_ylabel('Wallclock time (s)', fontsize="x-large")
+ax.set_xlabel('Number of particles (N)', fontsize="x-large")
+ax.plot(number_of_particles_per_simulation, cuda, color="red", linestyle="dashed")
+ax.scatter(number_of_particles_per_simulation, cuda, color="red")
+ax.plot(number_of_particles_per_simulation, serial, color="blue", linestyle="dashed")
+ax.scatter(number_of_particles_per_simulation, serial, color="blue")
+ax.set_yscale("log")
+ax.yaxis.set_major_formatter(ScalarFormatter())
+plt.xticks(number_of_particles_per_simulation, rotation=45)
+plt.tight_layout()
+fig.canvas.draw()
+plt.savefig("results/cuda/cuda_vs_serial_timings.png")
+# endregion
+# region Overhead
 
 plt.close("all")
 # OpenMP overhead
@@ -116,6 +171,8 @@ plt.xticks(number_of_processes)
 plt.tight_layout()
 fig.canvas.draw()
 plt.savefig("results/mpi/mpi_overhead.png")
+# endregion
+# region Speedup
 
 plt.close("all")
 # OpenMP Speedup
@@ -154,6 +211,8 @@ plt.xticks(number_of_processes)
 plt.tight_layout()
 fig.canvas.draw()
 plt.savefig("results/mpi/mpi_speedup.png")
+# endregion
+# region Efficiency
 
 plt.close("all")
 # OpenMP Efficiency
@@ -200,6 +259,8 @@ ax.set_yticklabels(ytickslabels)
 plt.tight_layout()
 fig.canvas.draw()
 plt.savefig("results/mpi/mpi_efficiency.png")
+# endregion
+# region Strong Scaling Test
 
 plt.close("all")
 # OpenMP Strong Scaling Test
@@ -254,3 +315,29 @@ mpi_strong_scaling_table = np.hstack([np.array(number_of_processes)[:, np.newaxi
                                       mpi_efficiency[2][:, np.newaxis]])
 np.savetxt("results/mpi_strong_scaling_table.csv", X=np.around(mpi_strong_scaling_table, decimals=2),
            header="P, t(N=4096;P), S(N=4096;P), E(N=4096;P)", delimiter=",")
+# endregion
+# region Memory consumption
+
+plt.close("all")
+# Heap memory allocation
+fig = plt.figure(figsize=(8, 6))
+ax = fig.add_subplot(1, 1, 1)
+title = ax.set_title("Memory consumption", fontsize="x-large")
+ax.set_ylabel("Heap memory size (MiB)", fontsize="x-large")
+ax.set_xlabel("Number of particles (N)", fontsize="x-large")
+serial_heap_memory_MiB = [0.955, 1.8, 3.5, 6.9, 13.8, 27.5]
+openmp_heap_memory_MiB = [1, 2, 3.8, 7.5, 15, 29.9]
+mpi_heap_memory_MiB = [4.3, 5.7, 8.5, 14.2, 25.5, 48.4]
+for memory_consumption, paradigm in zip([serial_heap_memory_MiB,
+                                         openmp_heap_memory_MiB,
+                                         mpi_heap_memory_MiB], ["Serial", "OpenMP", "MPI"]):
+    ax.plot(number_of_particles_per_simulation, memory_consumption, label=paradigm, linestyle="dashed", alpha=0.75)
+    ax.scatter(number_of_particles_per_simulation, memory_consumption, alpha=0.75)
+ax.legend()
+# ax.set_yscale("log")
+# ax.yaxis.set_major_formatter(ScalarFormatter())
+plt.xticks(number_of_particles_per_simulation, rotation=45)
+plt.tight_layout()
+fig.canvas.draw()
+plt.savefig("results/heap_memory/serial_openmp_mpi.png")
+# endregion
