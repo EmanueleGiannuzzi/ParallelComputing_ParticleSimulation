@@ -9,6 +9,8 @@ massif: str = "valgrind --tool=massif --massif-out-file=heap-profiler/"
 houston: str = "Houston, We’ve Had a Problem Here!"
 correct_parts_out: str = " Naive/Naive_out/naive.parts.out.{0}"  # " Serial/Serial_out/serial.parts.out.{0}"
 
+# region Naive
+
 
 def run_naive(_number_of_particles: int,
               _particle_initialization_seed: int,
@@ -34,6 +36,8 @@ def run_naive(_number_of_particles: int,
             .format(_number_of_particles, _cutoff), shell=True)
 
     return timing
+# endregion
+# region Serial
 
 
 def run_serial(_number_of_particles: int,
@@ -71,6 +75,8 @@ def run_serial(_number_of_particles: int,
             print(houston)
 
     return timing
+# endregion
+# region OpenMP
 
 
 def run_openmp(_number_of_threads: int,
@@ -111,6 +117,8 @@ def run_openmp(_number_of_threads: int,
             print(houston)
 
     return timing
+# endregion
+# region MPI
 
 
 def run_mpi(number_of_processes: int,
@@ -151,6 +159,8 @@ def run_mpi(number_of_processes: int,
             print(houston)
 
     return timing
+# endregion
+# region Thrust
 
 
 def run_cuda(_number_of_particles: int,
@@ -185,6 +195,8 @@ def run_cuda(_number_of_particles: int,
             print(houston)
 
     return timing
+# endregion
+# region Cuda
 
 
 def run_cuda_opt(_number_of_particles: int,
@@ -219,6 +231,7 @@ def run_cuda_opt(_number_of_particles: int,
             print(houston)
 
     return timing
+# endregion
 
 
 def make_directory(dir_name: str):
