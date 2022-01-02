@@ -12,7 +12,7 @@
     <option name="ADD_SOURCE_ROOTS" value="true" />
     <module name="" />
     <option name="SCRIPT_NAME" value="$PROJECT_DIR$/correctness-check/correctness-check.py" />
-    <option name="PARAMETERS" value="../CUDA/CUDA_out/opt.parts.out ../Naive/Naive_out/naive.parts.out" />
+    <option name="PARAMETERS" value="../CUDA/CUDA_out/opt.parts.out ../Serial/Serial_out/serial.parts.out" />
     <option name="SHOW_COMMAND_LINE" value="false" />
     <option name="EMULATE_TERMINAL" value="false" />
     <option name="MODULE_MODE" value="false" />
